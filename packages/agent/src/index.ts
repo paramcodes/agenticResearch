@@ -33,6 +33,7 @@ export type StreamEvent =
 
 export { getResearchState, maxRevisions, newThreadId, resetGraphCache };
 export { buildSourcesBlock, type CitedSource } from "./graph.js";
+export { generateConversationTitle, heuristicTitle } from "./titles.js";
 
 /**
  * Planner → Writer → Editor graph (spec 02) with Redis checkpointer.

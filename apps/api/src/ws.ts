@@ -1,7 +1,7 @@
 import type { Server } from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
 import { prisma } from "@repo/db";
-import { streamResearch } from "@repo/agent";
+import { generateConversationTitle, heuristicTitle, streamResearch } from "@repo/agent";
 import { verifyToken } from "./lib/jwt.js";
 import { isTokenBlacklisted, setConversationStatus } from "./lib/redis.js";
 
@@ -105,13 +105,22 @@ export function attachWs(server: Server) {
             })
           : null;
       if (!convo) {
-        const t = msg.topic.trim().replace(/\s+/g, " ");
+        const quickTitle = heuristicTitle(msg.topic);
         convo = await prisma.conversation.create({
           data: {
             userId,
-            title: t.length > 60 ? `${t.slice(0, 60)}…` : t,
+            title: quickTitle,
             status: "running",
           },
+        });
+        // Upgrade to an LLM title without blocking the research run.
+        const convoId0 = convo.id;
+        void generateConversationTitle(msg.topic).then(async (title) => {
+          if (title !== quickTitle) {
+            await prisma.conversation
+              .update({ where: { id: convoId0 }, data: { title } })
+              .catch(() => undefined);
+          }
         });
       }
       const conversationId = convo.id;

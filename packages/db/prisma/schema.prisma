@@ -41,6 +41,7 @@ model User {
   updatedAt    DateTime     @updatedAt
 
   conversations Conversation[]
+  refreshTokens RefreshToken[]
 
   @@index([email])
 }
@@ -68,4 +69,16 @@ model Message {
   createdAt      DateTime    @default(now())
 
   @@index([conversationId, createdAt])
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([token])
+  @@index([userId])
 }

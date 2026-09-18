@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "@repo/db";
-import { agentInfo, runResearch } from "@repo/agent";
+import { agentInfo, generateConversationTitle, heuristicTitle, runResearch } from "@repo/agent";
 import { asyncHandler, requireAuth } from "../middleware/auth.js";
 
 const router: Router = Router();
@@ -39,13 +39,21 @@ router.post(
           })
         : null;
     if (!convo) {
-      const t = body.topic.trim().replace(/\s+/g, " ");
+      const quickTitle = heuristicTitle(body.topic);
       convo = await prisma.conversation.create({
         data: {
           userId: req.user!.id,
-          title: t.length > 60 ? `${t.slice(0, 60)}…` : t,
+          title: quickTitle,
           status: "running",
         },
+      });
+      // Upgrade to an LLM title without blocking the research run.
+      void generateConversationTitle(body.topic).then(async (title) => {
+        if (title !== quickTitle) {
+          await prisma.conversation
+            .update({ where: { id: convo!.id }, data: { title } })
+            .catch(() => undefined);
+        }
       });
     } else {
       await prisma.conversation.update({ where: { id: convo.id }, data: { status: "running" } });

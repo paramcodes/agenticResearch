@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, streamResearch, type ChatMessage, type ConversationSummary, type ResearchDepth } from "../lib/api";
 import { Markdown } from "../components/Markdown";
+import { gsap } from "gsap";
 
 function SendIcon() {
   return (
@@ -18,6 +19,7 @@ function SendIcon() {
 
 const tmpId = (p: string) => `${p}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 const nowIso = () => new Date().toISOString();
+const PAGE_SIZE = 50;
 
 function phaseText(node: string, writerRuns: number): string {
   switch (node) {
@@ -48,8 +50,13 @@ export function Agent() {
   const [error, setError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
+  const [pagination, setPagination] = useState<{ page: number; totalMessages: number; hasMore: boolean } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   const writerRuns = useRef(0);
+  // True while older messages are being prepended — suppresses autoscroll
+  // and the new-message entrance animation for that update.
+  const prepending = useRef(false);
 
   const hasMessages = messages.length > 0;
 
@@ -66,7 +73,12 @@ export function Agent() {
     void refreshList();
   }, [refreshList]);
 
+  // Autoscroll to the newest message — skipped when prepending history.
   useEffect(() => {
+    if (prepending.current) {
+      prepending.current = false;
+      return;
+    }
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
@@ -75,13 +87,62 @@ export function Agent() {
     localStorage.setItem("researcherit.depth", d);
   };
 
+  // Hero entrance: transforms + opacity only, cleaned up via gsap.context.
+  useEffect(() => {
+    if (hasMessages) return;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduced) return;
+    const ctx = gsap.context(() => {
+      gsap.from("[data-anim]", {
+        y: 24,
+        autoAlpha: 0,
+        duration: 0.7,
+        ease: "power2.out",
+        stagger: 0.08,
+      });
+    }, rootRef);
+    return () => ctx.revert();
+  }, [hasMessages]);
+
+  // New-message entrance: only the latest bubble, transforms only.
+  useEffect(() => {
+    if (prepending.current || messages.length === 0) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const thread = rootRef.current?.querySelector(".thread");
+    const items = thread?.querySelectorAll(".msg");
+    const last = items?.[items.length - 1];
+    if (last) {
+      gsap.fromTo(
+        last,
+        { autoAlpha: 0, y: 16 },
+        { autoAlpha: 1, y: 0, duration: 0.4, ease: "power2.out", overwrite: true },
+      );
+    }
+  }, [messages.length]);
+
   const openConversation = async (id: string) => {
     setActiveId(id);
     setError(null);
     try {
-      const { conversation } = await api.getConversation(id);
+      // Page 1 = newest messages; older pages prepend above.
+      const { conversation, pagination: pag } = await api.getConversation(id, 1, PAGE_SIZE);
       setMessages(conversation.messages);
+      setPagination({ page: pag.page, totalMessages: pag.totalMessages, hasMore: pag.hasMore });
     } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+
+  const loadOlderMessages = async () => {
+    if (!activeId || !pagination?.hasMore || loading) return;
+    const nextPage = pagination.page + 1;
+    try {
+      const { conversation, pagination: pag } = await api.getConversation(activeId, nextPage, PAGE_SIZE);
+      prepending.current = true;
+      setMessages((prev) => [...conversation.messages, ...prev]);
+      setPagination({ page: pag.page, totalMessages: pag.totalMessages, hasMore: pag.hasMore });
+    } catch (err) {
+      prepending.current = false;
       setError((err as Error).message);
     }
   };
@@ -93,6 +154,7 @@ export function Agent() {
     setError(null);
     setEditingId(null);
     setPhase(null);
+    setPagination(null);
   };
 
   const removeConversation = async (id: string) => {
@@ -105,12 +167,15 @@ export function Agent() {
     }
   };
 
-  /** Reconcile optimistic tmp messages with server truth. */
+  /** Reconcile optimistic tmp messages with server truth (newest page). */
   const reconcile = async (conversationId: string) => {
     setActiveId(conversationId);
-    const { conversation } = await api.getConversation(conversationId);
+    const { conversation, pagination: pag } = await api.getConversation(conversationId, 1, PAGE_SIZE);
     setMessages(conversation.messages);
+    setPagination({ page: pag.page, totalMessages: pag.totalMessages, hasMore: pag.hasMore });
     await refreshList();
+    // The LLM-upgraded title lands async — pick it up once it settles.
+    window.setTimeout(() => void refreshList(), 12_000);
   };
 
   /**
@@ -153,7 +218,7 @@ export function Agent() {
   const runHttp = async (content: string, convoId: string | null) => {
     if (convoId) {
       const { userMessage, assistantMessage } = await api.sendMessage(convoId, content, depth);
-      setMessages((m) => [...m, userMessage, assistantMessage]);
+      await reconcile(convoId).catch(() => setMessages((m) => [...m, userMessage, assistantMessage]));
     } else {
       const res = await api.research(content, undefined, depth);
       setActiveId(res.conversationId);
@@ -229,8 +294,35 @@ export function Agent() {
     }
   };
 
+  const composer = (
+    <form className="composer" onSubmit={submit}>
+      <input
+        value={topic}
+        onChange={(e) => setTopic(e.target.value)}
+        placeholder="e.g. Solid-state batteries: state of the art in 2026"
+        aria-label="Research topic"
+        disabled={loading}
+      />
+      <select
+        className="depth-select"
+        value={depth}
+        onChange={(e) => changeDepth(e.target.value as ResearchDepth)}
+        aria-label="Research depth"
+        disabled={loading}
+        title="Research depth: sources + length"
+      >
+        <option value="quick">Quick</option>
+        <option value="standard">Standard</option>
+        <option value="deep">Deep</option>
+      </select>
+      <button className="send-btn" type="submit" disabled={loading || !topic.trim()} aria-label="Send">
+        <SendIcon />
+      </button>
+    </form>
+  );
+
   return (
-    <div className="agent-layout">
+    <div className="agent-layout" ref={rootRef}>
       <aside className={`sidebar ${sidebarOpen ? "open" : "closed"}`}>
         <div className="sidebar-head">
           {sidebarOpen && (
@@ -267,90 +359,84 @@ export function Agent() {
       </aside>
 
       <main className="chat">
-        <div className={`composer-wrap ${hasMessages ? "docked" : "hero"}`}>
-          {!hasMessages && (
+        {!hasMessages ? (
+          <div className="composer-wrap hero">
             <div className="hero-copy">
-              <h2>What should I research?</h2>
-              <p className="muted">Planner → Writer → Editor agents return cited markdown you can keep.</p>
+              <h2 data-anim>What should I research?</h2>
+              <p className="muted" data-anim>Planner → Writer → Editor agents return cited markdown you can keep.</p>
             </div>
-          )}
-          <form className="composer" onSubmit={submit}>
-            <input
-              value={topic}
-              onChange={(e) => setTopic(e.target.value)}
-              placeholder="e.g. Solid-state batteries: state of the art in 2026"
-              aria-label="Research topic"
-              disabled={loading}
-            />
-            <select
-              className="depth-select"
-              value={depth}
-              onChange={(e) => changeDepth(e.target.value as ResearchDepth)}
-              aria-label="Research depth"
-              disabled={loading}
-              title="Research depth: sources + length"
-            >
-              <option value="quick">Quick</option>
-              <option value="standard">Standard</option>
-              <option value="deep">Deep</option>
-            </select>
-            <button className="send-btn" type="submit" disabled={loading || !topic.trim()} aria-label="Send">
-              <SendIcon />
-            </button>
-          </form>
-          {loading && (
-            <div className="progress" role="status" aria-label="Researching">
-              <div className="progress-bar" />
-              <p className="muted small">{phase ?? "Agents are researching… live tokens appear below."}</p>
+            <div data-anim className="hero-composer">
+              {composer}
             </div>
-          )}
-          {error && <div className="error">{error}</div>}
-        </div>
-
-        {hasMessages && (
-          <div className="thread">
-            {messages.map((m) =>
-              m.role === "user" ? (
-                <div key={m.id} className="msg msg-user">
-                  {editingId === m.id ? (
-                    <div className="edit-box">
-                      <textarea value={editDraft} onChange={(e) => setEditDraft(e.target.value)} rows={3} />
-                      <div className="edit-actions">
-                        <button className="btn btn-primary btn-sm" disabled={loading} onClick={() => saveEdit(m)}>
-                          Re-run
-                        </button>
-                        <button className="btn btn-ghost btn-sm" onClick={() => setEditingId(null)}>
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                      <p>{m.content}</p>
-                      <button
-                        className="link-btn"
-                        onClick={() => {
-                          setEditingId(m.id);
-                          setEditDraft(m.content);
-                        }}
-                      >
-                        Edit
-                      </button>
-                    </>
-                  )}
-                </div>
-              ) : (
-                <div key={m.id} className="msg msg-assistant">
-                  {m.content ? (
-                    <Markdown content={m.content} />
-                  ) : (
-                    <p className="muted small">Agents are writing…</p>
-                  )}
-                </div>
-              ),
+            {loading && (
+              <div className="progress" role="status" aria-label="Researching">
+                <div className="progress-bar" />
+                <p className="muted small">{phase ?? "Agents are researching… live tokens appear below."}</p>
+              </div>
             )}
-            <div ref={bottomRef} />
+            {error && <div className="error">{error}</div>}
           </div>
+        ) : (
+          <>
+            <div className="thread">
+              {pagination?.hasMore && (
+                <button className="load-more-btn" onClick={loadOlderMessages} disabled={loading}>
+                  Load older messages
+                </button>
+              )}
+              {messages.map((m) =>
+                m.role === "user" ? (
+                  <div key={m.id} className="msg msg-user">
+                    {editingId === m.id ? (
+                      <div className="edit-box">
+                        <textarea value={editDraft} onChange={(e) => setEditDraft(e.target.value)} rows={3} />
+                        <div className="edit-actions">
+                          <button className="btn btn-primary btn-sm" disabled={loading} onClick={() => saveEdit(m)}>
+                            Re-run
+                          </button>
+                          <button className="btn btn-ghost btn-sm" onClick={() => setEditingId(null)}>
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <p>{m.content}</p>
+                        <button
+                          className="link-btn"
+                          onClick={() => {
+                            setEditingId(m.id);
+                            setEditDraft(m.content);
+                          }}
+                        >
+                          Edit
+                        </button>
+                      </>
+                    )}
+                  </div>
+                ) : (
+                  <div key={m.id} className="msg msg-assistant">
+                    {m.content ? (
+                      <Markdown content={m.content} />
+                    ) : (
+                      <p className="muted small">Agents are writing…</p>
+                    )}
+                  </div>
+                ),
+              )}
+              <div ref={bottomRef} />
+            </div>
+            <div className="composer-wrap docked">
+              {loading && (
+                <div className="progress" role="status" aria-label="Researching">
+                  <div className="progress-bar" />
+                  <p className="muted small">{phase ?? "Agents are researching… live tokens appear below."}</p>
+                </div>
+              )}
+              {error && <div className="error">{error}</div>}
+              {composer}
+            </div>
+          </>
         )}
       </main>
     </div>

@@ -1,0 +1,3 @@
+- implement refresh tokens + LLM conversation titles + message pagination.
+- fix: sources are not loading so add those at the bottom of the chat.
+- use the relevant UI skills, and find the best design that is used for chatgpt, claude, and other LLMs web UI. and use those principles to design the chat UI. and use gsap skills and gsap animations to add interactivity to the chat UI and landing page.

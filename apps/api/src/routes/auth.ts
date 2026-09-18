@@ -2,7 +2,7 @@ import { Router, type Response } from "express";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@repo/db";
-import { signToken, tokenExpirySeconds } from "../lib/jwt.js";
+import { signToken, generateRefreshToken, tokenExpirySeconds, refreshTokenExpiryDays } from "../lib/jwt.js";
 import { blacklistToken, checkRateLimit } from "../lib/redis.js";
 import { verifyGoogleCredential } from "../lib/google.js";
 import { asyncHandler, requireAuth, toPublicUser } from "../middleware/auth.js";
@@ -79,7 +79,17 @@ router.post(
       },
     });
     const token = signToken(user);
-    res.status(201).json({ user: toPublicUser(user), token });
+    const refreshToken = generateRefreshToken();
+    const refreshTokenExpiry = new Date();
+    refreshTokenExpiry.setDate(refreshTokenExpiry.getDate() + refreshTokenExpiryDays());
+    await prisma.refreshToken.create({
+      data: {
+        token: refreshToken,
+        userId: user.id,
+        expiresAt: refreshTokenExpiry,
+      },
+    });
+    res.status(201).json({ user: toPublicUser(user), token, refreshToken });
   }),
 );
 
@@ -108,7 +118,17 @@ router.post(
       return;
     }
     const token = signToken(user);
-    res.json({ user: toPublicUser(user), token });
+    const refreshToken = generateRefreshToken();
+    const refreshTokenExpiry = new Date();
+    refreshTokenExpiry.setDate(refreshTokenExpiry.getDate() + refreshTokenExpiryDays());
+    await prisma.refreshToken.create({
+      data: {
+        token: refreshToken,
+        userId: user.id,
+        expiresAt: refreshTokenExpiry,
+      },
+    });
+    res.json({ user: toPublicUser(user), token, refreshToken });
   }),
 );
 
@@ -153,7 +173,17 @@ router.post(
       });
     }
     const token = signToken(user);
-    res.json({ user: toPublicUser(user), token });
+    const refreshToken = generateRefreshToken();
+    const refreshTokenExpiry = new Date();
+    refreshTokenExpiry.setDate(refreshTokenExpiry.getDate() + refreshTokenExpiryDays());
+    await prisma.refreshToken.create({
+      data: {
+        token: refreshToken,
+        userId: user.id,
+        expiresAt: refreshTokenExpiry,
+      },
+    });
+    res.json({ user: toPublicUser(user), token, refreshToken });
   }),
 );
 
@@ -234,7 +264,69 @@ router.post(
   requireAuth,
   asyncHandler(async (req, res) => {
     if (req.token) await blacklistToken(req.token, tokenExpirySeconds());
+    // Delete all refresh tokens for this user
+    await prisma.refreshToken.deleteMany({
+      where: { userId: req.user!.id },
+    });
     res.json({ ok: true });
+  }),
+);
+
+const refreshSchema = z.object({
+  refreshToken: z.string().min(1),
+});
+
+router.post(
+  "/refresh",
+  asyncHandler(async (req, res) => {
+    let body;
+    try {
+      body = refreshSchema.parse(req.body);
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        res.status(400).json({ error: "Validation failed" });
+        return;
+      }
+      throw err;
+    }
+
+    const refreshTokenRecord = await prisma.refreshToken.findUnique({
+      where: { token: body.refreshToken },
+      include: { user: true },
+    });
+
+    if (!refreshTokenRecord || refreshTokenRecord.expiresAt < new Date()) {
+      // Delete expired token if it exists
+      if (refreshTokenRecord) {
+        await prisma.refreshToken.delete({
+          where: { token: body.refreshToken },
+        });
+      }
+      res.status(401).json({ error: "Invalid or expired refresh token" });
+      return;
+    }
+
+    // Generate new access token
+    const token = signToken(refreshTokenRecord.user);
+
+    // Generate new refresh token (rotation)
+    const newRefreshToken = generateRefreshToken();
+    const refreshTokenExpiry = new Date();
+    refreshTokenExpiry.setDate(refreshTokenExpiry.getDate() + refreshTokenExpiryDays());
+
+    // Delete old refresh token and create new one
+    await prisma.refreshToken.delete({
+      where: { token: body.refreshToken },
+    });
+    await prisma.refreshToken.create({
+      data: {
+        token: newRefreshToken,
+        userId: refreshTokenRecord.user.id,
+        expiresAt: refreshTokenExpiry,
+      },
+    });
+
+    res.json({ user: toPublicUser(refreshTokenRecord.user), token, refreshToken: newRefreshToken });
   }),
 );
 

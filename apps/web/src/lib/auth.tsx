@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { api, getToken, setToken, type PublicUser } from "./api";
+import { api, getToken, setToken, getRefreshToken, setRefreshToken, type PublicUser } from "./api";
 
 interface AuthCtx {
   user: PublicUser | null;
@@ -29,6 +29,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(user);
     } catch {
       setToken(null);
+      setRefreshToken(null);
       setUser(null);
     } finally {
       setLoading(false);
@@ -40,20 +41,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [refresh]);
 
   const login = useCallback(async (identifier: string, password: string) => {
-    const { user, token } = await api.login({ identifier, password });
+    const { user, token, refreshToken } = await api.login({ identifier, password });
     setToken(token);
+    setRefreshToken(refreshToken);
     setUser(user);
   }, []);
 
   const register = useCallback(async (input: { name: string; email: string; username?: string; password: string }) => {
-    const { user, token } = await api.register(input);
+    const { user, token, refreshToken } = await api.register(input);
     setToken(token);
+    setRefreshToken(refreshToken);
     setUser(user);
   }, []);
 
   const googleLogin = useCallback(async (credential: string) => {
-    const { user, token } = await api.google(credential);
+    const { user, token, refreshToken } = await api.google(credential);
     setToken(token);
+    setRefreshToken(refreshToken);
     setUser(user);
   }, []);
 
@@ -64,6 +68,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // still clear locally
     }
     setToken(null);
+    setRefreshToken(null);
     setUser(null);
   }, []);
 

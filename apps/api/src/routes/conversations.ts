@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "@repo/db";
-import { runResearch } from "@repo/agent";
+import { generateConversationTitle, heuristicTitle, runResearch } from "@repo/agent";
 import { setConversationStatus } from "../lib/redis.js";
 import { asyncHandler, requireAuth } from "../middleware/auth.js";
 
@@ -17,9 +17,8 @@ const messageSchema = z.object({
   depth: z.enum(["quick", "standard", "deep"]).default("standard"),
 });
 
-function titleFromTopic(topic: string): string {
-  const t = topic.trim().replace(/\s+/g, " ");
-  return t.length > 60 ? `${t.slice(0, 60)}…` : t || "New research";
+export function titleFromTopic(topic: string): string {
+  return heuristicTitle(topic);
 }
 
 // List own conversations (no message bodies — keeps sidebar fast)
@@ -68,15 +67,52 @@ router.post(
 router.get(
   "/:id",
   asyncHandler(async (req, res) => {
+    // Newest-first windowing: page 1 holds the latest `limit` messages in
+    // chronological order; higher pages prepend older ones. This keeps the
+    // initial view on the newest messages no matter how long the thread is.
+    const page = Math.max(Number(req.query.page) || 1, 1);
+    const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 100);
+
     const convo = await prisma.conversation.findFirst({
       where: { id: req.params.id, userId: req.user!.id },
-      include: { messages: { orderBy: { createdAt: "asc" } } },
+      include: { _count: { select: { messages: true } } },
     });
     if (!convo) {
       res.status(404).json({ error: "Conversation not found" });
       return;
     }
-    res.json({ conversation: convo });
+    const totalMessages = convo._count.messages;
+    const totalPages = Math.ceil(totalMessages / limit);
+    // Window into the chronological list counted back from the newest end.
+    const newestCount = totalMessages - (page - 1) * limit;
+    const take = Math.max(Math.min(limit, newestCount), 0);
+    const skip = Math.max(newestCount - take, 0);
+    const messages =
+      take > 0
+        ? await prisma.message.findMany({
+            where: { conversationId: convo.id },
+            orderBy: { createdAt: "asc" },
+            skip,
+            take,
+          })
+        : [];
+    res.json({
+      conversation: {
+        id: convo.id,
+        title: convo.title,
+        status: convo.status,
+        messages,
+        createdAt: convo.createdAt,
+        updatedAt: convo.updatedAt,
+      },
+      pagination: {
+        page,
+        limit,
+        totalMessages,
+        totalPages,
+        hasMore: page < totalPages,
+      },
+    });
   }),
 );
 
@@ -148,9 +184,20 @@ router.post(
       where: { id: convo.id },
       data: {
         status: "running",
-        title: convo.title === "New research" ? titleFromTopic(body.content) : convo.title,
+        title: convo.title === "New research" ? heuristicTitle(body.content) : convo.title,
       },
     });
+    if (convo.title === "New research") {
+      // Upgrade to an LLM title without blocking the research run.
+      const quickTitle = heuristicTitle(body.content);
+      void generateConversationTitle(body.content).then(async (title) => {
+        if (title !== quickTitle) {
+          await prisma.conversation
+            .update({ where: { id: convo!.id }, data: { title } })
+            .catch(() => undefined);
+        }
+      });
+    }
     await setConversationStatus(convo.id, "running");
 
     try {
