@@ -1,0 +1,71 @@
+// Prisma schema — single source of truth for Postgres.
+// Users + conversation history. Agent outputs are stored as assistant Messages
+// (markdown) so the frontend can render them without re-running the agent.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AuthProvider {
+  CREDENTIALS
+  GOOGLE
+}
+
+enum MessageRole {
+  user
+  assistant
+}
+
+enum ResearchStatus {
+  pending
+  running
+  completed
+  failed
+}
+
+model User {
+  id           String       @id @default(cuid())
+  name         String
+  email        String       @unique
+  username     String?      @unique
+  passwordHash String?
+  provider     AuthProvider @default(CREDENTIALS)
+  googleId     String?      @unique
+  avatarUrl    String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  conversations Conversation[]
+
+  @@index([email])
+}
+
+model Conversation {
+  id        String         @id @default(cuid())
+  userId    String
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String         @default("New research")
+  status    ResearchStatus @default(pending)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  messages Message[]
+
+  @@index([userId, updatedAt])
+}
+
+model Message {
+  id             String      @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           MessageRole
+  content        String      @db.Text
+  createdAt      DateTime    @default(now())
+
+  @@index([conversationId, createdAt])
+}

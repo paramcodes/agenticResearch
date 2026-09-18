@@ -1,0 +1,42 @@
+{
+  "name": "@researcherit/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --hot src/index.ts",
+    "start": "bun run src/index.ts",
+    "build": "tsc --noEmit -p tsconfig.json",
+    "lint": "echo 'no lint'",
+    "check-types": "tsc --noEmit -p tsconfig.json",
+    "db:generate": "bun --filter=@repo/db run db:generate",
+    "db:migrate": "bun --filter=@repo/db run db:migrate",
+    "db:deploy": "bun --filter=@repo/db run db:deploy"
+  },
+  "dependencies": {
+    "@repo/agent": "workspace:*",
+    "@repo/db": "workspace:*",
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "google-auth-library": "^9.15.0",
+    "helmet": "^8.0.0",
+    "ioredis": "^5.4.1",
+    "jsonwebtoken": "^9.0.2",
+    "morgan": "^1.10.0",
+    "ws": "^8.18.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@repo/typescript-config": "workspace:*",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/jsonwebtoken": "^9.0.9",
+    "@types/morgan": "^1.9.9",
+    "@types/node": "^22.9.0",
+    "@types/ws": "^8.5.13",
+    "typescript": "7.0.2"
+  }
+}

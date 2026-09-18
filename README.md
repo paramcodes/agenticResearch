@@ -1,159 +1,105 @@
-# Turborepo starter
+# ResearcherIt — multi-agent research, markdown out
 
-This Turborepo starter is maintained by the Turborepo core team.
-
-## Using this example
-
-Run the following command:
-
-```sh
-npx create-turbo@latest
-```
+Ask a topic in the Agent chat → a LangGraph team (planner, searchers,
+synthesizer — stub in Step 2, live in Step 3) returns markdown you can keep.
+History persists in Postgres, session state in Redis.
 
 ## What's inside?
 
-This Turborepo includes the following packages/apps:
+### Apps
 
-### Apps and Packages
+- `apps/web` — React + Vite SPA: landing, login/signup, protected Agent chat,
+  profile. Bun-initialised.
+- `apps/api` — TypeScript + Express: auth (email/username + Google), conversation
+  CRUD, agent endpoints, websocket server (`/ws`), Redis state. Runs on Bun.
 
-- `docs`: a [Next.js](https://nextjs.org/) app
-- `web`: another [Next.js](https://nextjs.org/) app
-- `@repo/ui`: a stub React component library shared by both `web` and `docs` applications
-- `@repo/eslint-config`: `eslint` configurations (includes `@next/eslint-plugin-next` and `eslint-config-prettier`)
-- `@repo/typescript-config`: `tsconfig.json`s used throughout the monorepo
+### Packages
 
-Each package/app is 100% [TypeScript](https://www.typescriptlang.org/).
+- `packages/db` — Prisma + Postgres schema (`User`, `Conversation`, `Message`).
+  Single PrismaClient singleton imported by the api.
+- `packages/agent` — LangGraph package. Step 2 ships a stub `StateGraph` with
+  the final `runResearch({ topic }) → { markdown }` contract so web/api
+  integrate once; Step 3 swaps in real nodes + streaming.
+- `packages/typescript-config`, `packages/eslint-config` — shared configs.
 
-### Utilities
+## Prerequisites
 
-This Turborepo has some additional tools already setup for you:
+- [Bun](https://bun.sh) 1.3+ (`bun --version`)
+- [Docker + Compose](https://docs.docker.com/compose/) (`docker compose version`)
+- Google OAuth client id — optional; email auth + dev fallback work without it.
 
-- [TypeScript](https://www.typescriptlang.org/) for static type checking
-- [ESLint](https://eslint.org/) for code linting
-- [Prettier](https://prettier.io) for code formatting
+## Start the project
 
-### Build
-
-To build all apps and packages, run the following command:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo build
-```
-
-Without global `turbo`, use your package manager:
+### Option A — Docker (fastest, recommended)
 
 ```sh
-cd my-turborepo
-npx turbo build
-bun exec turbo build
-bun exec turbo build
+cp .env.example .env
+# optional: cp apps/web/.env.example apps/web/.env
+# optional: cp apps/api/.env.example apps/api/.env
+bun run docker:up
 ```
 
-You can build a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
+- Frontend → http://localhost:5173
+- API → http://localhost:4000 (`GET /api/health`)
+- Postgres → localhost:5432 · Redis → localhost:6379
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
+The `api` service auto-runs `prisma migrate deploy` on boot, so tables exist on
+first start. Other handy commands:
 
 ```sh
-turbo build --filter=docs
+bun run docker:up:d   # detached
+bun run docker:logs   # follow logs
+bun run docker:down   # stop (keeps pgdata/redisdata volumes)
 ```
 
-Without global `turbo`:
+Demo login after seeding (see below): `demo@researcherit.local` / `password123`.
+
+### Option B — local dev without Docker
+
+You still need Postgres + Redis reachable (or start just those):
 
 ```sh
-npx turbo build --filter=docs
-bun exec turbo build --filter=docs
-bun exec turbo build --filter=docs
+docker compose up postgres redis -d
+bun install
+cp packages/db/.env.example packages/db/.env   # DATABASE_URL with localhost
+cp apps/api/.env.example apps/api/.env
+cp apps/web/.env.example apps/web/.env         # VITE_API_URL=http://localhost:4000
+bun run db:deploy   # or: bun run db:migrate (creates a migration)
+bun run db:seed     # optional demo user + welcome conversation
+bun run dev         # turbo: api :4000 + web :5173
 ```
 
-### Develop
+Per-app dev: `bun --filter=@researcherit/api run dev`,
+`bun --filter=@researcherit/web run dev`.
 
-To develop all apps and packages, run the following command:
+## Environment files
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
+| File | Used by | Notes |
+| --- | --- | --- |
+| `.env.example` → `.env` | docker compose | service hostnames (`postgres`, `redis`) |
+| `apps/api/.env.example` | api (local) | `localhost` URLs, `JWT_SECRET`, `GOOGLE_CLIENT_ID` |
+| `apps/web/.env.example` | web (local) | `VITE_API_URL`, `VITE_GOOGLE_CLIENT_ID` |
+| `packages/db/.env.example` | prisma CLI | `DATABASE_URL` for migrate/studio |
+| `packages/agent/.env.example` | agent (Step 3) | `OPENAI_API_KEY`, `TAVILY_API_KEY` |
 
-```sh
-cd my-turborepo
-turbo dev
-```
+Google login: create a **Web** OAuth client in Google Cloud Console, put the id
+in `GOOGLE_CLIENT_ID` (api) + `VITE_GOOGLE_CLIENT_ID` (web). Without it, the
+web hides the Google button and the api accepts decoded dev credentials only
+when `ALLOW_INSECURE_GOOGLE_DEV=true` (never in production).
 
-Without global `turbo`, use your package manager:
+## API surface
 
-```sh
-cd my-turborepo
-npx turbo dev
-bun exec turbo dev
-bun exec turbo dev
-```
-
-You can develop a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo dev --filter=web
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo dev --filter=web
-bun exec turbo dev --filter=web
-bun exec turbo dev --filter=web
-```
-
-### Remote Caching
-
-> [!TIP]
-> Vercel Remote Cache is free for all plans. Get started today at [vercel.com](https://vercel.com/signup?utm_source=remote-cache-sdk&utm_campaign=free_remote_cache).
-
-Turborepo can use a technique known as [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching) to share cache artifacts across machines, enabling you to share build caches with your team and CI/CD pipelines.
-
-By default, Turborepo will cache locally. To enable Remote Caching you will need an account with Vercel. If you don't have an account you can [create one](https://vercel.com/signup?utm_source=turborepo-examples), then enter the following commands:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo login
-```
-
-Without global `turbo`, use your package manager:
-
-```sh
-cd my-turborepo
-npx turbo login
-bun exec turbo login
-bun exec turbo login
-```
-
-This will authenticate the Turborepo CLI with your [Vercel account](https://vercel.com/docs/concepts/personal-accounts/overview).
-
-Next, you can link your Turborepo to your Remote Cache by running the following command from the root of your Turborepo:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo link
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo link
-bun exec turbo link
-bun exec turbo link
-```
+- `POST /api/auth/register|login|google|logout`, `GET /api/auth/me`,
+  `PATCH /api/auth/profile`, `POST /api/auth/change-password`
+- `GET|POST /api/conversations`, `GET|PATCH|DELETE /api/conversations/:id`
+- `POST /api/conversations/:id/messages` — chat loop (user msg → agent → markdown)
+- `POST /api/agent/research` — first-message convenience (creates conversation)
+- `GET /api/agent/info` — which graph build is running
+- `WS /ws?token=<JWT>` — `{"type":"research","topic"}` → status/result frames
+  (coarse progress in Step 2; token stream in Step 3)
 
 ## Useful Links
 
-Learn more about the power of Turborepo:
-
-- [Tasks](https://turborepo.dev/docs/crafting-your-repository/running-tasks)
-- [Caching](https://turborepo.dev/docs/crafting-your-repository/caching)
-- [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching)
-- [Filtering](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters)
-- [Configuration Options](https://turborepo.dev/docs/reference/configuration)
-- [CLI Usage](https://turborepo.dev/docs/reference/command-line-reference)
+- [Turborepo tasks](https://turborepo.dev/docs/crafting-your-repository/running-tasks)
+- [Prisma docs](https://www.prisma.io/docs)
+- [LangGraph docs](https://langchain-ai.github.io/langgraph/)
