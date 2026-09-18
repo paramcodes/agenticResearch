@@ -52,8 +52,12 @@ export function Agent() {
   const [editDraft, setEditDraft] = useState("");
   const [pagination, setPagination] = useState<{ page: number; totalMessages: number; hasMore: boolean } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const threadRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const writerRuns = useRef(0);
+  // True while the user has scrolled up to read — streaming must not yank
+  // the view away from them.
+  const stickToBottom = useRef(true);
   // True while older messages are being prepended — suppresses autoscroll
   // and the new-message entrance animation for that update.
   const prepending = useRef(false);
@@ -73,14 +77,28 @@ export function Agent() {
     void refreshList();
   }, [refreshList]);
 
-  // Autoscroll to the newest message — skipped when prepending history.
+  // Follow the newest message only while the user sits at the bottom.
+  // Skipped when prepending history; instant (not smooth) while streaming
+  // so tokens don't queue janky animations.
   useEffect(() => {
     if (prepending.current) {
       prepending.current = false;
       return;
     }
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (!stickToBottom.current) return;
+    const thread = threadRef.current;
+    if (thread) {
+      thread.scrollTo({ top: thread.scrollHeight, behavior: loading ? "auto" : "smooth" });
+    } else {
+      bottomRef.current?.scrollIntoView({ behavior: loading ? "auto" : "smooth" });
+    }
   }, [messages, loading]);
+
+  const onThreadScroll = () => {
+    const thread = threadRef.current;
+    if (!thread) return;
+    stickToBottom.current = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 120;
+  };
 
   const changeDepth = (d: ResearchDepth) => {
     setDepth(d);
@@ -233,6 +251,7 @@ export function Agent() {
     if (!content || loading) return;
     setError(null);
     setLoading(true);
+    stickToBottom.current = true;
     setPhase("Starting agents…");
     const userTmp: ChatMessage = { id: tmpId("tmp-u"), role: "user", content, createdAt: nowIso() };
     const asstTmp: ChatMessage = { id: tmpId("tmp-a"), role: "assistant", content: "", createdAt: nowIso() };
@@ -378,7 +397,7 @@ export function Agent() {
           </div>
         ) : (
           <>
-            <div className="thread">
+            <div className="thread" ref={threadRef} onScroll={onThreadScroll}>
               {pagination?.hasMore && (
                 <button className="load-more-btn" onClick={loadOlderMessages} disabled={loading}>
                   Load older messages
