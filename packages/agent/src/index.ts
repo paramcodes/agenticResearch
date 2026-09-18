@@ -37,7 +37,7 @@ export { buildSourcesBlock, type CitedSource } from "./graph.js";
 /**
  * Planner → Writer → Editor graph (spec 02) with Redis checkpointer.
  *
- * - Live path (OPENAI_API_KEY + TAVILY_API_KEY): real search + LLM nodes.
+ * - Live path (GROQ_API_KEY/OPENAI_API_KEY + SERPER_API_KEY): real search + LLM nodes.
  * - Offline path (no keys): deterministic labelled templates; the editor
  *   still revises exactly once so the loop is exercised without an LLM.
  * - thread_id (`conv:<id>:<run>` per invocation) scopes checkpoints so runs
@@ -66,5 +66,5 @@ export const agentInfo = {
   graph: "planner-writer-editor-v1",
   streaming: true,
   maxRevisions: 2,
-  note: "Set OPENAI_API_KEY + TAVILY_API_KEY for live runs; otherwise deterministic offline templates.",
+  note: "Set GROQ_API_KEY (or OPENAI_API_KEY) + SERPER_API_KEY for live runs; otherwise deterministic offline templates.",
 };

@@ -255,7 +255,7 @@ const OFFLINE_FEEDBACK =
 
 async function plannerNode(state: State): Promise<Partial<State>> {
   const outcome = await searchTopic(state.topic, state.depth);
-  const note = outcome.note ?? (outcome.offline ? "Live search disabled (no TAVILY_API_KEY); using labelled placeholder sources." : "");
+  const note = outcome.note ?? (outcome.offline ? "Live search disabled (no SERPER_API_KEY); using labelled placeholder sources." : "");
   if (hasLlmKey()) {
     const plan = await invokeLlm(
       "You are a Content Planner. Follow the brief exactly; output the plan as markdown.",

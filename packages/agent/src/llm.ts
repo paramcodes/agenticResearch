@@ -24,7 +24,7 @@ export function getModelName(): string {
 }
 
 export function hasLlmKey(): boolean {
-  return Boolean(process.env.OPENAI_API_KEY?.trim());
+  return Boolean(process.env.GROQ_API_KEY?.trim() || process.env.OPENAI_API_KEY?.trim());
 }
 
 export async function invokeLlm(
@@ -37,9 +37,10 @@ export async function invokeLlm(
   if (opts.onToken) {
     handlers.push(new TokenForwarder(opts.onToken));
   }
+  const apiKey = process.env.GROQ_API_KEY?.trim() || process.env.OPENAI_API_KEY?.trim();
   const model = new ChatOpenAI({
     modelName: getModelName(),
-    openAIApiKey: process.env.OPENAI_API_KEY,
+    openAIApiKey: apiKey,
     configuration: process.env.OPENAI_BASE_URL
       ? { baseURL: process.env.OPENAI_BASE_URL }
       : undefined,
