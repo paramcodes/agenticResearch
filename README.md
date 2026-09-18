@@ -1,25 +1,29 @@
 # ResearcherIt — multi-agent research, markdown out
 
-Ask a topic in the Agent chat → a LangGraph team (planner, searchers,
-synthesizer — stub in Step 2, live in Step 3) returns markdown you can keep.
-History persists in Postgres, session state in Redis.
+Ask a topic in the Agent chat → a LangGraph team (Planner → Writer → Editor,
+with Editor→Writer revision capped at `MAX_REVISIONS`) returns cited markdown
+you can keep. Tokens stream live over websockets; history persists in
+Postgres, checkpoints + session state in Redis.
 
 ## What's inside?
 
 ### Apps
 
-- `apps/web` — React + Vite SPA: landing, login/signup, protected Agent chat,
+- `apps/web` — React + Vite SPA: landing, login/signup, protected Agent chat
+  (live token streaming over `/ws` with HTTP fallback, depth selector),
   profile. Bun-initialised.
-- `apps/api` — TypeScript + Express: auth (email/username + Google), conversation
-  CRUD, agent endpoints, websocket server (`/ws`), Redis state. Runs on Bun.
+- `apps/api` — TypeScript + Express: auth (email/username + Google, login
+  rate-limit), conversation CRUD, agent endpoints, websocket server (`/ws`),
+  Redis state. Runs on Bun.
 
 ### Packages
 
 - `packages/db` — Prisma + Postgres schema (`User`, `Conversation`, `Message`).
   Single PrismaClient singleton imported by the api.
-- `packages/agent` — LangGraph package. Step 2 ships a stub `StateGraph` with
-  the final `runResearch({ topic }) → { markdown }` contract so web/api
-  integrate once; Step 3 swaps in real nodes + streaming.
+- `packages/agent` — LangGraph Planner→Writer→Editor graph (`runResearch` /
+  `streamResearch`). Live when `OPENAI_API_KEY` + `TAVILY_API_KEY` are set;
+  otherwise deterministic offline templates (labelled, never fake citations).
+  Redis checkpointer (resume by thread_id) with MemorySaver fallback.
 - `packages/typescript-config`, `packages/eslint-config` — shared configs.
 
 ## Prerequisites
@@ -80,7 +84,13 @@ Per-app dev: `bun --filter=@researcherit/api run dev`,
 | `apps/api/.env.example` | api (local) | `localhost` URLs, `JWT_SECRET`, `GOOGLE_CLIENT_ID` |
 | `apps/web/.env.example` | web (local) | `VITE_API_URL`, `VITE_GOOGLE_CLIENT_ID` |
 | `packages/db/.env.example` | prisma CLI | `DATABASE_URL` for migrate/studio |
-| `packages/agent/.env.example` | agent (Step 3) | `OPENAI_API_KEY`, `TAVILY_API_KEY` |
+| `packages/agent/.env.example` | agent (docs) | `OPENAI_API_KEY`, `TAVILY_API_KEY`, `MAX_REVISIONS` |
+
+Live research: set `OPENAI_API_KEY` + `TAVILY_API_KEY` (root `.env` for docker,
+or `apps/api/.env` locally — the agent runs in-process with the api).
+Optional: `OPENAI_BASE_URL` (compatible endpoints), `RESEARCH_MODEL`
+(default `gpt-4o-mini`), `MAX_REVISIONS` (default `2`). Without keys the
+pipeline still runs end-to-end on labelled offline templates.
 
 Google login: create a **Web** OAuth client in Google Cloud Console, put the id
 in `GOOGLE_CLIENT_ID` (api) + `VITE_GOOGLE_CLIENT_ID` (web). Without it, the
@@ -92,11 +102,13 @@ when `ALLOW_INSECURE_GOOGLE_DEV=true` (never in production).
 - `POST /api/auth/register|login|google|logout`, `GET /api/auth/me`,
   `PATCH /api/auth/profile`, `POST /api/auth/change-password`
 - `GET|POST /api/conversations`, `GET|PATCH|DELETE /api/conversations/:id`
-- `POST /api/conversations/:id/messages` — chat loop (user msg → agent → markdown)
+- `POST /api/conversations/:id/messages` — chat loop (user msg → agent → markdown
+  + `{ verdict, revisionCount, offline }` meta)
 - `POST /api/agent/research` — first-message convenience (creates conversation)
 - `GET /api/agent/info` — which graph build is running
-- `WS /ws?token=<JWT>` — `{"type":"research","topic"}` → status/result frames
-  (coarse progress in Step 2; token stream in Step 3)
+- `WS /ws?token=<JWT>` — `{"type":"research","topic","depth?"}` →
+  `node` status frames, `token` chunks, then `result`
+  (`{ conversationId, markdown, verdict, revisionCount, offline }`)
 
 ## Useful Links
 

@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@repo/db";
 import { signToken, tokenExpirySeconds } from "../lib/jwt.js";
-import { blacklistToken } from "../lib/redis.js";
+import { blacklistToken, checkRateLimit } from "../lib/redis.js";
 import { verifyGoogleCredential } from "../lib/google.js";
 import { asyncHandler, requireAuth, toPublicUser } from "../middleware/auth.js";
 
@@ -47,6 +47,10 @@ function zodError(res: Response, err: unknown) {
 router.post(
   "/register",
   asyncHandler(async (req, res) => {
+    if (!(await checkRateLimit(`register:${req.ip}`, 10, 60))) {
+      res.status(429).json({ error: "Too many attempts, try again in a minute" });
+      return;
+    }
     let body;
     try {
       body = registerSchema.parse(req.body);
@@ -82,6 +86,10 @@ router.post(
 router.post(
   "/login",
   asyncHandler(async (req, res) => {
+    if (!(await checkRateLimit(`login:${req.ip}`, 20, 60))) {
+      res.status(429).json({ error: "Too many attempts, try again in a minute" });
+      return;
+    }
     let body;
     try {
       body = loginSchema.parse(req.body);
@@ -107,6 +115,10 @@ router.post(
 router.post(
   "/google",
   asyncHandler(async (req, res) => {
+    if (!(await checkRateLimit(`login:${req.ip}`, 20, 60))) {
+      res.status(429).json({ error: "Too many attempts, try again in a minute" });
+      return;
+    }
     let body;
     try {
       body = googleSchema.parse(req.body);

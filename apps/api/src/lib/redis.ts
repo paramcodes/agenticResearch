@@ -57,3 +57,21 @@ export async function setConversationStatus(conversationId: string, status: stri
     // ignore
   }
 }
+
+/**
+ * Fixed-window rate limit. Returns true when the caller is within budget.
+ * Best-effort like everything else here: if Redis is down we allow the
+ * request (fail-open) so local dev without docker keeps working.
+ */
+export async function checkRateLimit(key: string, limit: number, windowSeconds: number): Promise<boolean> {
+  try {
+    const r = getRedis();
+    if (!r) return true;
+    const full = `rl:${key}`;
+    const count = await r.incr(full);
+    if (count === 1) await r.expire(full, windowSeconds);
+    return count <= limit;
+  } catch {
+    return true;
+  }
+}

@@ -1,7 +1,7 @@
 import type { Server } from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
 import { prisma } from "@repo/db";
-import { runResearch } from "@repo/agent";
+import { streamResearch } from "@repo/agent";
 import { verifyToken } from "./lib/jwt.js";
 import { isTokenBlacklisted, setConversationStatus } from "./lib/redis.js";
 
@@ -19,15 +19,17 @@ function send(socket: WebSocket, payload: unknown) {
 }
 
 /**
- * Websocket endpoint for future streaming (Step 3).
- * Step 2: speaks the same protocol, but progress events are coarse
- * (received -> running -> done) since the stub graph has no token stream.
- * The React frontend uses HTTP for now; this stays ready for the swap.
+ * Websocket streaming endpoint (spec 02).
+ * The graph streams node status + LLM token chunks; the api persists the
+ * user message up front and the assistant markdown at the end, mirroring
+ * the HTTP chat loop.
  *
  * Connect: ws://host:PORT/ws?token=<JWT>
- * Send:    {"type":"research","topic":"...","conversationId?":"..."}
- * Receive: {"type":"status","status":"running"|"completed"|"failed",...}
- *          {"type":"result","conversationId","markdown"}
+ * Send:    {"type":"research","topic":"...","conversationId?":"...","depth?":"quick"|"standard"|"deep"}
+ * Receive: {"type":"status","status":"connected"|"running"|"completed"|"failed",...}
+ *          {"type":"node","node":"planner"|"writer"|"editor","detail?"}
+ *          {"type":"token","token":"...","conversationId"}
+ *          {"type":"result","conversationId","markdown","verdict","revisionCount","offline"}
  *          {"type":"error","error":"..."}
  */
 export function attachWs(server: Server) {
@@ -124,7 +126,7 @@ export function attachWs(server: Server) {
         conversationId,
       });
 
-      const result = await runResearch({
+      const result = await streamRunToClient(ws, conversationId, {
         topic: msg.topic,
         conversationId,
         depth: msg.depth ?? "standard",
@@ -143,7 +145,7 @@ export function attachWs(server: Server) {
         progress: 1,
         conversationId,
       });
-      send(ws, { type: "result", conversationId, markdown: result.markdown });
+      send(ws, { type: "result", conversationId, markdown: result.markdown, verdict: result.verdict, revisionCount: result.revisionCount, offline: result.offline });
     } catch (err) {
       console.error("[ws] research failed:", err);
       send(ws, { type: "status", status: "failed" });
@@ -152,4 +154,25 @@ export function attachWs(server: Server) {
   }
 
   console.log("[ws] listening on /ws");
+}
+
+/** Fan the agent's async-generator events out as ws frames. Resolves with
+ *  the final result so the caller can persist it. */
+async function streamRunToClient(
+  ws: WebSocket,
+  conversationId: string,
+  input: { topic: string; conversationId: string; depth: "quick" | "standard" | "deep" },
+): Promise<{ markdown: string; verdict: string; revisionCount: number; offline: boolean }> {
+  let final: { markdown: string; verdict: string; revisionCount: number; offline: boolean } | null = null;
+  for await (const event of streamResearch(input)) {
+    if (event.type === "status") {
+      send(ws, { type: "node", node: event.node, detail: event.detail, conversationId });
+    } else if (event.type === "token") {
+      send(ws, { type: "token", token: event.token, conversationId });
+    } else {
+      final = event.result;
+    }
+  }
+  if (!final) throw new Error("Research stream ended without a result");
+  return final;
 }

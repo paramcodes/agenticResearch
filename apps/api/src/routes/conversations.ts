@@ -167,7 +167,7 @@ router.post(
         data: { status: "completed" },
       });
       await setConversationStatus(convo.id, "completed");
-      res.status(201).json({ userMessage, assistantMessage });
+      res.status(201).json({ userMessage, assistantMessage, meta: { verdict: result.verdict, revisionCount: result.revisionCount, offline: result.offline } });
     } catch (err) {
       console.error("[agent] research failed:", err);
       await prisma.conversation.update({

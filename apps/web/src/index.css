@@ -132,6 +132,11 @@ label { display: grid; gap: 6px; font-size: 0.9rem; }
 .hero-copy h2 { margin: 0 0 8px; font-size: 1.8rem; }
 .composer { display: flex; gap: 10px; width: 100%; max-width: 680px; margin: 0 auto; }
 .composer input { flex: 1; padding: 14px 16px; border-radius: 999px; font-size: 1rem; }
+.depth-select {
+  width: auto; flex-shrink: 0; border-radius: 999px; padding: 0 12px;
+  background: var(--panel); border: 1px solid var(--border); color: var(--muted);
+  font-size: 0.85rem; cursor: pointer;
+}
 .send-btn {
   width: 48px; height: 48px; border-radius: 50%; flex-shrink: 0;
   background: linear-gradient(135deg, var(--accent), var(--accent-2));

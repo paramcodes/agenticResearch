@@ -2,7 +2,8 @@
 
 Monorepo: Turborepo + Bun workspaces (`apps/*`, `packages/*`).
 Stack: React/Vite web · Express api (Bun runtime) · Prisma/Postgres (`@repo/db`)
-· Redis (ioredis, best-effort) · LangGraph (`@repo/agent`, stub until Step 3).
+· Redis (ioredis best-effort + redis-stack for the graph checkpointer)
+· LangGraph 0.4 Planner→Writer→Editor (`@repo/agent`).
 
 ## Start the project
 
@@ -23,7 +24,8 @@ Seed demo user: `bun run db:seed` (`demo@researcherit.local` / `password123`).
 - `apps/api/.env` ← `apps/api/.env.example` (localhost URLs for local dev)
 - `apps/web/.env` ← `apps/web/.env.example` (`VITE_API_URL`, `VITE_GOOGLE_CLIENT_ID`)
 - `packages/db/.env` ← `packages/db/.env.example` (`DATABASE_URL` for CLI)
-- `packages/agent/.env` ← `packages/agent/.env.example` (Step-3 LLM keys)
+- `packages/agent/.env` ← `packages/agent/.env.example` (docs only; agent runs
+  in-process with the api — set `OPENAI_*`/`TAVILY_*`/`MAX_REVISIONS` on the api)
 
 ## Commands
 
@@ -37,16 +39,21 @@ Seed demo user: `bun run db:seed` (`demo@researcherit.local` / `password123`).
 - DB changes: edit `packages/db/prisma/schema.prisma`, then
   `bun run db:migrate`. Api imports `prisma` from `@repo/db` — never new-up a
   second client.
-- Agent changes: keep `runResearch(input) → { markdown, sources }` in
-  `packages/agent/src/index.ts` stable. Real graph + Redis checkpointer land
-  in Step 3; `/ws` protocol in `apps/api/src/ws.ts` already matches it.
+- Agent changes: keep `runResearch(input)` / `streamResearch(input)` in
+  `packages/agent/src/index.ts` stable. Graph lives in `src/graph.ts`
+  (Planner→Writer→Editor, revise cap `MAX_REVISIONS`); search in `src/search.ts`
+  (Tavily, offline mocks use `example.invalid` — never invent real citations);
+  checkpointer in `resolveCheckpointer` (Redis via patched 0.0.3 saver, else
+  MemorySaver). Thread per run: `conv:<id>:<rand>`; resume via
+  `getResearchState(threadId)`. `/ws` streams node/token/result frames.
 - Auth: JWT Bearer (`apps/api/src/lib/jwt.ts`), `requireAuth` middleware,
+  login/register rate-limit (`checkRateLimit`, fail-open without Redis),
   Google verify in `lib/google.ts` (dev fallback only with
   `ALLOW_INSECURE_GOOGLE_DEV=true`, never prod). Redis token blacklist +
   `conv:<id>:status` are best-effort — api must boot without Redis.
-- Web: token in `localStorage`, `src/lib/api.ts` wrapper, `ProtectedRoute`
-  for `/agent` + `/profile`. Agent page uses HTTP in Step 2; don't build WS
-  UI until the graph streams.
+- Web: token in `localStorage`, `src/lib/api.ts` wrapper (`streamResearch`
+  over `/ws` with HTTP fallback), `ProtectedRoute` for `/agent` + `/profile`.
+  Depth selector sends quick/standard/deep (search breadth + writer scope).
 - Docker: api `Dockerfile` target `dev` runs `bun --hot` + `prisma migrate
   deploy` on boot; web `Dockerfile` bakes `VITE_*` at build time — changing
   them needs `docker compose up --build`.

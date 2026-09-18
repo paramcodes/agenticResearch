@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type ChatMessage, type ConversationSummary } from "../lib/api";
+import { api, streamResearch, type ChatMessage, type ConversationSummary, type ResearchDepth } from "../lib/api";
 import { Markdown } from "../components/Markdown";
 
 function SendIcon() {
@@ -16,17 +16,40 @@ function SendIcon() {
   );
 }
 
+const tmpId = (p: string) => `${p}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+const nowIso = () => new Date().toISOString();
+
+function phaseText(node: string, writerRuns: number): string {
+  switch (node) {
+    case "starting":
+      return "Starting agents…";
+    case "planner":
+      return "Planning from live sources…";
+    case "writer":
+      return writerRuns > 1 ? `Revising draft (pass ${writerRuns})…` : "Writing…";
+    case "editor":
+      return "Editing…";
+    default:
+      return "Researching…";
+  }
+}
+
 export function Agent() {
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [topic, setTopic] = useState("");
+  const [depth, setDepth] = useState<ResearchDepth>(
+    () => (localStorage.getItem("researcherit.depth") as ResearchDepth) || "standard",
+  );
   const [loading, setLoading] = useState(false);
+  const [phase, setPhase] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
+  const writerRuns = useRef(0);
 
   const hasMessages = messages.length > 0;
 
@@ -47,6 +70,11 @@ export function Agent() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
+  const changeDepth = (d: ResearchDepth) => {
+    setDepth(d);
+    localStorage.setItem("researcherit.depth", d);
+  };
+
   const openConversation = async (id: string) => {
     setActiveId(id);
     setError(null);
@@ -64,6 +92,7 @@ export function Agent() {
     setTopic("");
     setError(null);
     setEditingId(null);
+    setPhase(null);
   };
 
   const removeConversation = async (id: string) => {
@@ -76,27 +105,88 @@ export function Agent() {
     }
   };
 
+  /** Reconcile optimistic tmp messages with server truth. */
+  const reconcile = async (conversationId: string) => {
+    setActiveId(conversationId);
+    const { conversation } = await api.getConversation(conversationId);
+    setMessages(conversation.messages);
+    await refreshList();
+  };
+
+  /**
+   * Primary path: stream tokens over /ws into a live assistant bubble.
+   * Throws only when nothing was produced (connection-level failure) so the
+   * caller can fall back to HTTP. Mid-stream failures reconcile instead —
+   * the server already persisted the user message.
+   */
+  const runStream = async (content: string, convoId: string | null, asstTmpId: string) => {
+    writerRuns.current = 0;
+    let sawFrames = false;
+    let seenId: string | null = convoId;
+    const res = await streamResearch(content, convoId, depth, {
+      onNode: (node) => {
+        sawFrames = true;
+        if (node === "writer") writerRuns.current += 1;
+        setPhase(phaseText(node, writerRuns.current));
+      },
+      onToken: (t) => {
+        sawFrames = true;
+        setPhase(null);
+        setMessages((m) => m.map((x) => (x.id === asstTmpId ? { ...x, content: x.content + t } : x)));
+      },
+      onConversationId: (id) => {
+        seenId = id;
+      },
+    }).catch(async (err) => {
+      if (sawFrames && seenId) {
+        // Server got the request; show what persisted instead of duplicating.
+        await reconcile(seenId).catch(() => undefined);
+        throw new Error(`${(err as Error).message} — kept what the server saved.`);
+      }
+      throw err;
+    });
+    await reconcile(res.conversationId);
+    return res;
+  };
+
+  /** Fallback path: plain HTTP request/response (also the offline safety net). */
+  const runHttp = async (content: string, convoId: string | null) => {
+    if (convoId) {
+      const { userMessage, assistantMessage } = await api.sendMessage(convoId, content, depth);
+      setMessages((m) => [...m, userMessage, assistantMessage]);
+    } else {
+      const res = await api.research(content, undefined, depth);
+      setActiveId(res.conversationId);
+      setMessages([res.userMessage, res.assistantMessage]);
+    }
+    await refreshList();
+  };
+
   const submit = async (e?: React.FormEvent) => {
     e?.preventDefault();
     const content = topic.trim();
     if (!content || loading) return;
     setError(null);
     setLoading(true);
+    setPhase("Starting agents…");
+    const userTmp: ChatMessage = { id: tmpId("tmp-u"), role: "user", content, createdAt: nowIso() };
+    const asstTmp: ChatMessage = { id: tmpId("tmp-a"), role: "assistant", content: "", createdAt: nowIso() };
+    setMessages((m) => [...m, userTmp, asstTmp]);
     try {
-      if (activeId) {
-        const { userMessage, assistantMessage } = await api.sendMessage(activeId, content);
-        setMessages((m) => [...m, userMessage, assistantMessage]);
-      } else {
-        const res = await api.research(content);
-        setActiveId(res.conversationId);
-        setMessages([res.userMessage, res.assistantMessage]);
-      }
+      await runStream(content, activeId, asstTmp.id);
       setTopic("");
-      await refreshList();
-    } catch (err) {
-      setError((err as Error).message);
+    } catch {
+      // Streaming unavailable → drop the optimistic bubbles, use HTTP once.
+      setMessages((m) => m.filter((x) => x.id !== userTmp.id && x.id !== asstTmp.id));
+      try {
+        await runHttp(content, activeId);
+        setTopic("");
+      } catch (err) {
+        setError((err as Error).message);
+      }
     } finally {
       setLoading(false);
+      setPhase(null);
     }
   };
 
@@ -105,22 +195,37 @@ export function Agent() {
     if (!content || loading || !activeId) return;
     setLoading(true);
     setError(null);
+    setPhase("Starting agents…");
+    const convoId = activeId;
+    const userTmp: ChatMessage = { id: tmpId("tmp-u"), role: "user", content, createdAt: nowIso() };
+    const asstTmp: ChatMessage = { id: tmpId("tmp-a"), role: "assistant", content: "", createdAt: nowIso() };
+    // Replace the edited message in place; everything after it belonged to
+    // the old prompt.
+    setMessages((prev) => {
+      const idx = prev.findIndex((m) => m.id === msg.id);
+      const head = idx >= 0 ? prev.slice(0, idx) : prev;
+      return [...head, userTmp, asstTmp];
+    });
+    setEditingId(null);
+    setEditDraft("");
     try {
-      const { userMessage, assistantMessage } = await api.sendMessage(activeId, content);
-      // Replace the edited user message in place, drop everything after it
-      // (it belonged to the old prompt), then append the fresh answer.
-      setMessages((prev) => {
-        const idx = prev.findIndex((m) => m.id === msg.id);
-        const head = idx >= 0 ? prev.slice(0, idx) : prev;
-        return [...head, userMessage, assistantMessage];
-      });
-      setEditingId(null);
-      setEditDraft("");
-      await refreshList();
-    } catch (err) {
-      setError((err as Error).message);
+      await runStream(content, convoId, asstTmp.id);
+    } catch {
+      setMessages((m) => m.filter((x) => x.id !== userTmp.id && x.id !== asstTmp.id));
+      try {
+        const { userMessage, assistantMessage } = await api.sendMessage(convoId, content, depth);
+        setMessages((prev) => {
+          const idx = prev.findIndex((m) => m.id === msg.id);
+          const head = idx >= 0 ? prev.slice(0, idx) : prev;
+          return [...head, userMessage, assistantMessage];
+        });
+        await refreshList();
+      } catch (err) {
+        setError((err as Error).message);
+      }
     } finally {
       setLoading(false);
+      setPhase(null);
     }
   };
 
@@ -166,7 +271,7 @@ export function Agent() {
           {!hasMessages && (
             <div className="hero-copy">
               <h2>What should I research?</h2>
-              <p className="muted">Ask anything — the agents return markdown you can keep.</p>
+              <p className="muted">Planner → Writer → Editor agents return cited markdown you can keep.</p>
             </div>
           )}
           <form className="composer" onSubmit={submit}>
@@ -177,6 +282,18 @@ export function Agent() {
               aria-label="Research topic"
               disabled={loading}
             />
+            <select
+              className="depth-select"
+              value={depth}
+              onChange={(e) => changeDepth(e.target.value as ResearchDepth)}
+              aria-label="Research depth"
+              disabled={loading}
+              title="Research depth: sources + length"
+            >
+              <option value="quick">Quick</option>
+              <option value="standard">Standard</option>
+              <option value="deep">Deep</option>
+            </select>
             <button className="send-btn" type="submit" disabled={loading || !topic.trim()} aria-label="Send">
               <SendIcon />
             </button>
@@ -184,7 +301,7 @@ export function Agent() {
           {loading && (
             <div className="progress" role="status" aria-label="Researching">
               <div className="progress-bar" />
-              <p className="muted small">Agents are researching… this takes a few seconds.</p>
+              <p className="muted small">{phase ?? "Agents are researching… live tokens appear below."}</p>
             </div>
           )}
           {error && <div className="error">{error}</div>}
@@ -224,7 +341,11 @@ export function Agent() {
                 </div>
               ) : (
                 <div key={m.id} className="msg msg-assistant">
-                  <Markdown content={m.content} />
+                  {m.content ? (
+                    <Markdown content={m.content} />
+                  ) : (
+                    <p className="muted small">Agents are writing…</p>
+                  )}
                 </div>
               ),
             )}

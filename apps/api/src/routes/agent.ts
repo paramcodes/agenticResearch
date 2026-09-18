@@ -64,7 +64,7 @@ router.post(
         data: { conversationId: convo.id, role: "assistant", content: result.markdown },
       });
       await prisma.conversation.update({ where: { id: convo.id }, data: { status: "completed" } });
-      res.status(201).json({ conversationId: convo.id, userMessage, assistantMessage });
+      res.status(201).json({ conversationId: convo.id, userMessage, assistantMessage, meta: { verdict: result.verdict, revisionCount: result.revisionCount, offline: result.offline } });
     } catch (err) {
       console.error("[agent] research failed:", err);
       await prisma.conversation.update({ where: { id: convo.id }, data: { status: "failed" } });

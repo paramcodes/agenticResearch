@@ -71,14 +71,114 @@ export const api = {
     request<{ conversation: { id: string; title: string; status: string; messages: ChatMessage[] } }>(`/api/conversations/${id}`),
   deleteConversation: (id: string) =>
     request<{ ok: boolean }>(`/api/conversations/${id}`, { method: "DELETE" }),
-  sendMessage: (id: string, content: string) =>
-    request<{ userMessage: ChatMessage; assistantMessage: ChatMessage }>(`/api/conversations/${id}/messages`, {
+  sendMessage: (id: string, content: string, depth: ResearchDepth = "standard") =>
+    request<{ userMessage: ChatMessage; assistantMessage: ChatMessage; meta?: ResearchMeta }>(`/api/conversations/${id}/messages`, {
       method: "POST",
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({ content, depth }),
     }),
-  research: (topic: string, conversationId?: string) =>
-    request<{ conversationId: string; userMessage: ChatMessage; assistantMessage: ChatMessage }>("/api/agent/research", {
+  research: (topic: string, conversationId?: string, depth: ResearchDepth = "standard") =>
+    request<{ conversationId: string; userMessage: ChatMessage; assistantMessage: ChatMessage; meta?: ResearchMeta }>("/api/agent/research", {
       method: "POST",
-      body: JSON.stringify({ topic, conversationId }),
+      body: JSON.stringify({ topic, conversationId, depth }),
     }),
 };
+
+export type ResearchDepth = "quick" | "standard" | "deep";
+
+export interface ResearchMeta {
+  verdict: string;
+  revisionCount: number;
+  offline: boolean;
+}
+
+export interface StreamCallbacks {
+  onNode?: (node: string, detail?: string) => void;
+  onToken?: (token: string) => void;
+  onConversationId?: (id: string) => void;
+  signal?: AbortSignal;
+}
+
+export interface StreamResult {
+  conversationId: string;
+  markdown: string;
+  meta: ResearchMeta;
+}
+
+/** Live research over /ws with token streaming. Rejects on socket errors or
+ *  server-side failure so callers can fall back to the HTTP endpoints. */
+export function streamResearch(
+  topic: string,
+  conversationId: string | null,
+  depth: ResearchDepth,
+  cb: StreamCallbacks = {},
+): Promise<StreamResult> {
+  const token = getToken();
+  if (!token) return Promise.reject(new Error("Not authenticated"));
+  // API_URL set (prod) → ws(s):// the api host. Empty (vite dev, where both
+  // /api and /ws are proxied) → same-origin ws.
+  const wsBase = API_URL
+    ? API_URL.replace(/^http/, "ws")
+    : `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}`;
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const fail = (err: Error) => {
+      if (!settled) {
+        settled = true;
+        try {
+          ws.close();
+        } catch {
+          // ignore
+        }
+        reject(err);
+      }
+    };
+    const ws = new WebSocket(`${wsBase}/ws?token=${encodeURIComponent(token)}`);
+    const timeout = window.setTimeout(() => fail(new Error("Research timed out (120s)") ), 120_000);
+    let markdown = "";
+    let activeId: string | null = conversationId;
+    let meta: ResearchMeta = { verdict: "", revisionCount: 0, offline: false };
+
+    if (cb.signal) {
+      cb.signal.addEventListener("abort", () => fail(new Error("Cancelled")), { once: true });
+    }
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ type: "research", topic, conversationId, depth }));
+    };
+    ws.onerror = () => fail(new Error("Realtime connection failed"));
+    ws.onclose = (e) => {
+      if (!settled && !e.wasClean) fail(new Error("Realtime connection closed"));
+      else if (!settled) fail(new Error("Research ended without a result"));
+    };
+    ws.onmessage = (e) => {
+      let msg: Record<string, unknown>;
+      try {
+        msg = JSON.parse(String(e.data)) as Record<string, unknown>;
+      } catch {
+        return;
+      }
+      if (msg.type === "token" && typeof msg.token === "string") {
+        if (typeof msg.conversationId === "string") cb.onConversationId?.(msg.conversationId);
+        markdown += msg.token;
+        cb.onToken?.(msg.token);
+      } else if (msg.type === "node" && typeof msg.node === "string") {
+        if (typeof msg.conversationId === "string") cb.onConversationId?.(msg.conversationId);
+        cb.onNode?.(msg.node, typeof msg.detail === "string" ? msg.detail : undefined);
+      } else if (msg.type === "result") {
+        activeId = typeof msg.conversationId === "string" ? msg.conversationId : activeId;
+        if (typeof msg.markdown === "string") markdown = msg.markdown;
+        meta = {
+          verdict: typeof msg.verdict === "string" ? msg.verdict : "",
+          revisionCount: typeof msg.revisionCount === "number" ? msg.revisionCount : 0,
+          offline: msg.offline === true,
+        };
+        settled = true;
+        window.clearTimeout(timeout);
+        ws.close();
+        if (!activeId) reject(new Error("Research ended without a conversation"));
+        else resolve({ conversationId: activeId, markdown, meta });
+      } else if (msg.type === "error") {
+        fail(new Error(typeof msg.error === "string" ? msg.error : "Research failed"));
+      }
+    };
+  });
+}

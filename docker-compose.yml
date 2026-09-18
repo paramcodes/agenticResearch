@@ -17,7 +17,9 @@ services:
       retries: 10
 
   redis:
-    image: redis:7-alpine
+    # Stack server (not plain redis): ships RediSearch, which the LangGraph
+    # RedisSaver needs for its checkpoint indexes (ensureIndexes).
+    image: redis/redis-stack-server:7.2.0-v9
     restart: unless-stopped
     ports:
       - "6379:6379"
@@ -50,6 +52,11 @@ services:
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       ALLOW_INSECURE_GOOGLE_DEV: ${ALLOW_INSECURE_GOOGLE_DEV:-true}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      RESEARCH_MODEL: ${RESEARCH_MODEL:-gpt-4o-mini}
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+      MAX_REVISIONS: ${MAX_REVISIONS:-2}
     ports:
       - "4000:4000"
     volumes:
