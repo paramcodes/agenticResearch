@@ -100,13 +100,14 @@ export function Markdown({
   showSources?: boolean;
 }) {
   const { mainContent, sources } = extractSources(content);
-  // Turn bare [n] markers into chip links (only when they resolve to a
-  // parsed source; code-like `arr[1]` is left alone by the lookbehind).
-  const withCites = sources.length > 0
-    ? mainContent.replace(/(^|[\s([])\[(\d+)\](?![\]()])/gm, (m, pre, n) =>
-        Number(n) <= sources.length ? `${pre}[${n}](#cite-${n})` : m,
-      )
-    : mainContent;
+  // Bare [n] markers become chips linking down to the source cards
+  // (`#ri-source-n`). Converted unconditionally so chips appear mid-stream
+  // too; cards render once the trailing Sources section completes.
+  // Code-like `arr[1]` is left alone by the leading-char guard.
+  const withCites = mainContent.replace(
+    /(^|[\s([])\[(\d+)\](?![\]()])/gm,
+    (m, pre, n) => `${pre}[${n}](#ri-source-${n})`,
+  );
 
   return (
     <div className={className}>
@@ -114,8 +115,10 @@ export function Markdown({
         remarkPlugins={[remarkGfm]}
         components={{
           a: ({ href, children }) =>
-            href?.startsWith("#cite-") ? (
-              <sup className="citation-ref ri-cite">{children}</sup>
+            href?.startsWith("#ri-source-") ? (
+              <a className="citation-ref ri-cite" href={href}>
+                {children}
+              </a>
             ) : (
               <a href={href} target="_blank" rel="noopener noreferrer">
                 {children}

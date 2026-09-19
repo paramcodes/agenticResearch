@@ -1,24 +1,3 @@
-@font-face {
-  font-family: "CursorGothic";
-  src: url("https://cdn.jsdelivr.net/gh/imjac0b/CursorGothic@main/fonts/CursorGothic-Regular.woff2") format("woff2");
-  font-display: swap; font-weight: 400; font-style: normal;
-}
-@font-face {
-  font-family: "CursorGothic";
-  src: url("https://cdn.jsdelivr.net/gh/imjac0b/CursorGothic@main/fonts/CursorGothic-Italic.woff2") format("woff2");
-  font-display: swap; font-weight: 400; font-style: italic;
-}
-@font-face {
-  font-family: "CursorGothic";
-  src: url("https://cdn.jsdelivr.net/gh/imjac0b/CursorGothic@main/fonts/CursorGothic-Bold.woff2") format("woff2");
-  font-display: swap; font-weight: 700; font-style: normal;
-}
-@font-face {
-  font-family: "CursorGothic";
-  src: url("https://cdn.jsdelivr.net/gh/imjac0b/CursorGothic@main/fonts/CursorGothic-BoldItalic.woff2") format("woff2");
-  font-display: swap; font-weight: 700; font-style: italic;
-}
-
 :root {
   --bg: #f2f1ed;
   --panel: #ebeae5;
@@ -739,7 +718,7 @@ label { display: grid; gap: 6px; font-size: 0.9rem; }
 
 /* Thread */
 .ri-thread { flex: 1; overflow-y: auto; background: var(--ri-bg); }
-.ri-thread-inner { max-width: 672px; margin: 0 auto; padding: 32px 24px; display: flex; flex-direction: column; gap: 40px; }
+.ri-thread-inner { max-width: 880px; margin: 0 auto; padding: 32px 24px; display: flex; flex-direction: column; gap: 40px; }
 .ri-empty { padding: 80px 24px; text-align: center; }
 .ri-empty h2 {
   font-family: var(--ri-display); font-size: 22px; font-weight: 500;
@@ -844,9 +823,10 @@ label { display: grid; gap: 6px; font-size: 0.9rem; }
   min-width: 15px; height: 15px; padding: 0 2px; border-radius: 3px;
   background: rgba(245, 78, 0, 0.12); color: var(--ri-accent);
   font-family: var(--ri-mono); font-size: 9px; font-weight: 500;
-  vertical-align: middle; margin: 0 1px; text-decoration: none; cursor: default;
+  vertical-align: middle; margin: 0 1px; text-decoration: none; cursor: pointer;
 }
 .ri-cite:hover { background: rgba(245, 78, 0, 0.22); }
+.ri-card { scroll-margin-top: 12px; }
 .ri-thinking { display: flex; align-items: center; gap: 8px; margin-top: 12px; color: rgba(38,37,30,0.45); font-size: 13px; }
 .ri-dots { display: inline-flex; gap: 4px; align-items: center; }
 .ri-dots span { width: 6px; height: 6px; border-radius: 50%; background: #dfa88f; animation: ri-think 1.4s ease-in-out infinite; }
@@ -887,7 +867,7 @@ label { display: grid; gap: 6px; font-size: 0.9rem; }
 
 /* Composer */
 .ri-footer { padding: 16px 24px; flex-shrink: 0; border-top: 1px solid var(--ri-line); background: var(--ri-bg); }
-.ri-footer-inner { max-width: 672px; margin: 0 auto; }
+.ri-footer-inner { max-width: 880px; margin: 0 auto; }
 .ri-composer {
   border-radius: 12px; background: var(--ri-panel);
   border: 1px solid rgba(38, 37, 30, 0.12);

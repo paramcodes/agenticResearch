@@ -128,8 +128,6 @@ export function Agent() {
   const [editDraft, setEditDraft] = useState("");
   const [pagination, setPagination] = useState<{ page: number; totalMessages: number; hasMore: boolean } | null>(null);
   const threadRef = useRef<HTMLDivElement>(null);
-  const prepending = useRef(false);
-  const stickToBottom = useRef(true);
   const writerRuns = useRef(0);
   // Mirror of liveSteps for async continuations: runStream/reconcile close
   // over stale renders, so they must read the ref, not the state.
@@ -159,20 +157,19 @@ export function Agent() {
     void refreshList();
   }, [refreshList]);
 
-  useEffect(() => {
-    if (prepending.current) {
-      prepending.current = false;
-      return;
-    }
-    if (!stickToBottom.current) return;
-    const thread = threadRef.current;
-    if (thread) thread.scrollTo({ top: thread.scrollHeight, behavior: loading ? "auto" : "smooth" });
-  }, [messages, loading]);
-
-  const onThreadScroll = () => {
-    const thread = threadRef.current;
-    if (!thread) return;
-    stickToBottom.current = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 120;
+  // When a new exchange starts, put its question at the top of the view so
+  // reading begins there — the view never chases the streaming bottom.
+  const scrollToNewExchange = () => {
+    requestAnimationFrame(() => {
+      const thread = threadRef.current;
+      const items = thread?.querySelectorAll(".ri-user-msg");
+      const last = items?.[items.length - 1] as HTMLElement | undefined;
+      if (thread && last) {
+        const top =
+          last.getBoundingClientRect().top - thread.getBoundingClientRect().top + thread.scrollTop;
+        thread.scrollTo({ top: Math.max(top - 16, 0), behavior: "smooth" });
+      }
+    });
   };
 
   const changeDepth = (d: ResearchDepth) => {
@@ -200,11 +197,9 @@ export function Agent() {
     const nextPage = pagination.page + 1;
     try {
       const { conversation, pagination: pag } = await api.getConversation(activeId, nextPage, PAGE_SIZE);
-      prepending.current = true;
       setMessages((prev) => [...conversation.messages, ...prev]);
       setPagination({ page: pag.page, totalMessages: pag.totalMessages, hasMore: pag.hasMore });
     } catch (err) {
-      prepending.current = false;
       setError((err as Error).message);
     }
   };
@@ -333,7 +328,6 @@ export function Agent() {
     if (!content || loading) return;
     setError(null);
     setLoading(true);
-    stickToBottom.current = true;
     setLiveStatus("thinking");
     setLive([
       { id: "s-think", kind: "thinking", label: "Query decomposition", detail: "Parsing the question…", status: "active" },
@@ -341,6 +335,7 @@ export function Agent() {
     const userTmp: ChatMessage = { id: tmpId("tmp-u"), role: "user", content, createdAt: nowIso() };
     const asstTmp: ChatMessage = { id: tmpId("tmp-a"), role: "assistant", content: "", createdAt: nowIso() };
     setMessages((m) => [...m, userTmp, asstTmp]);
+    scrollToNewExchange();
     try {
       await runStream(content, activeId, asstTmp.id);
       setTopic("");
@@ -364,7 +359,6 @@ export function Agent() {
     if (!content || loading || !activeId) return;
     setLoading(true);
     setError(null);
-    stickToBottom.current = true;
     setLiveStatus("thinking");
     setLive([
       { id: "s-think", kind: "thinking", label: "Query decomposition", detail: "Parsing the revised question…", status: "active" },
@@ -377,6 +371,7 @@ export function Agent() {
       const head = idx >= 0 ? prev.slice(0, idx) : prev;
       return [...head, userTmp, asstTmp];
     });
+    scrollToNewExchange();
     setEditingId(null);
     setEditDraft("");
     try {
@@ -465,7 +460,7 @@ export function Agent() {
             {sourcesOpen && (
               <div className="ri-cards">
                 {sources.map((s) => (
-                  <a key={`${s.number}-${s.url}`} className="ri-card" href={s.url} target="_blank" rel="noopener noreferrer">
+                  <a key={`${s.number}-${s.url}`} id={`ri-source-${s.number}`} className="ri-card" href={s.url} target="_blank" rel="noopener noreferrer">
                     <div className="ri-card-top">
                       <span className="ri-card-n">[{s.number}]</span>
                       <span className="ri-card-domain">{hostOf(s.url)}</span>
@@ -552,7 +547,7 @@ export function Agent() {
           </button>
         </header>
 
-        <main className="ri-thread" ref={threadRef} onScroll={onThreadScroll}>
+        <main className="ri-thread" ref={threadRef}>
           <div className="ri-thread-inner">
             {messages.length === 0 && !loading && (
               <div className="ri-empty">
