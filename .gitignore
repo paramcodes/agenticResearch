@@ -20,6 +20,8 @@ coverage
 
 # Vercel
 .vercel
+# Generated serverless bundle (built during `vercel build`, never committed)
+api/.bundle/
 
 # Build Outputs
 .next/

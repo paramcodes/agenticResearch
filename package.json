@@ -14,9 +14,11 @@
     "db:generate": "bun --filter=@repo/db run db:generate",
     "db:migrate": "bun --filter=@repo/db run db:migrate",
     "db:deploy": "bun --filter=@repo/db run db:deploy",
-    "db:seed": "bun --filter=@repo/db run db:seed"
+    "db:seed": "bun --filter=@repo/db run db:seed",
+    "build:vercel-api": "node scripts/bundle-vercel-api.mjs"
   },
   "devDependencies": {
+    "esbuild": "^0.28.2",
     "prettier": "3.9.6",
     "turbo": "^2.10.13",
     "typescript": "7.0.2"

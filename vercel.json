@@ -1,0 +1,30 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "bun install",
+  "buildCommand": "env -u PRISMA_QUERY_ENGINE_LIBRARY bun --filter=@repo/db run db:generate && bun run build:vercel-api && bun --filter=@researcherit/web run build",
+  "outputDirectory": "apps/web/dist",
+  "framework": "vite",
+  "functions": {
+    "api/index.ts": { "maxDuration": 60 },
+    "api/health.ts": { "maxDuration": 60 },
+    "api/auth/index.ts": { "maxDuration": 60 },
+    "api/auth/[...all].ts": { "maxDuration": 60 },
+    "api/agent/index.ts": { "maxDuration": 60 },
+    "api/agent/[...all].ts": { "maxDuration": 60 },
+    "api/conversations/index.ts": { "maxDuration": 60 },
+    "api/conversations/[id].ts": { "maxDuration": 60 },
+    "api/conversations/[id]/messages.ts": { "maxDuration": 60 }
+  },
+  "rewrites": [
+    { "source": "/agent", "destination": "/index.html" },
+    { "source": "/login", "destination": "/index.html" },
+    { "source": "/signup", "destination": "/index.html" },
+    { "source": "/profile", "destination": "/index.html" }
+  ],
+  "headers": [
+    {
+      "source": "/assets/(.*)",
+      "headers": [{ "key": "Cache-Control", "value": "public, immutable, max-age=31536000" }]
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+# Files to exclude from `vercel deploy` uploads (gitignore-style patterns).
+# Critical: local `.env` files must never ship — secrets would land in the
+# deployment filesystem (dotenv would even load them at runtime). Runtime
+# config comes from `vercel env` instead.
+.env
+.env*.local
+# Regenerated on every build (see vercel.json buildCommand) — uploading the
+# local copy would just waste 20MB+ and risk a stale Prisma engine.
+api/.bundle
+.turbo
+*.log
