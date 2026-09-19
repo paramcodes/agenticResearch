@@ -74,12 +74,36 @@ function extractSources(content: string): { mainContent: string; sources: Source
   return { mainContent: split.main, sources };
 }
 
-export function Markdown({ content }: { content: string }) {
+export function getSources(content: string): Source[] {
+  return extractSources(content).sources;
+}
+
+export function Markdown({ content, className = "markdown" }: { content: string; className?: string }) {
   const { mainContent, sources } = extractSources(content);
+  // Turn bare [n] markers into chip links (only when they resolve to a
+  // parsed source; code-like `arr[1]` is left alone by the lookbehind).
+  const withCites = sources.length > 0
+    ? mainContent.replace(/(^|[\s([])\[(\d+)\](?![\]()])/gm, (m, pre, n) =>
+        Number(n) <= sources.length ? `${pre}[${n}](#cite-${n})` : m,
+      )
+    : mainContent;
 
   return (
-    <div className="markdown">
-      <ReactMarkdown>{mainContent}</ReactMarkdown>
+    <div className={className}>
+      <ReactMarkdown
+        components={{
+          a: ({ href, children }) =>
+            href?.startsWith("#cite-") ? (
+              <sup className="citation-ref ri-cite">{children}</sup>
+            ) : (
+              <a href={href} target="_blank" rel="noopener noreferrer">
+                {children}
+              </a>
+            ),
+        }}
+      >
+        {withCites}
+      </ReactMarkdown>
       {sources.length > 0 && (
         <div className="sources-section">
           <h4>Sources</h4>

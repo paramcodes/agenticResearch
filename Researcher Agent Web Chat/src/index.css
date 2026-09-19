@@ -1,0 +1,153 @@
+@import 'tailwindcss';
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-ring: var(--ring);
+}
+
+:root {
+  /* Cursor Design System */
+  --background: #f2f1ed;
+  --foreground: #26251e;
+  --card: #e6e5e0;
+  --card-foreground: #26251e;
+  --primary: #ebeae5;
+  --primary-foreground: #26251e;
+  --secondary: #ebeae5;
+  --secondary-foreground: rgba(38, 37, 30, 0.55);
+  --muted: #f7f7f4;
+  --muted-foreground: rgba(38, 37, 30, 0.5);
+  --accent: #f54e00;
+  --accent-foreground: #ffffff;
+  --border: rgba(38, 37, 30, 0.1);
+  --border-medium: rgba(38, 37, 30, 0.2);
+  --border-strong: rgba(38, 37, 30, 0.55);
+  --ring: rgba(38, 37, 30, 0.2);
+  --radius: 8px;
+
+  /* Cursor font stacks */
+  --font-display: "CursorGothic", "CursorGothic Fallback", system-ui, "Helvetica Neue", Helvetica, Arial;
+  --font-body: "jjannon", "Iowan Old Style", "Palatino Linotype", "URW Palladio L", P052, ui-serif, Georgia, Cambria, "Times New Roman", Times;
+  --font-mono: "berkeleyMono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New";
+
+  /* AI timeline step colors */
+  --step-thinking: #dfa88f;
+  --step-searching: #9fc9a2;
+  --step-reading: #9fbbe0;
+  --step-synthesizing: #c0a8dd;
+  --step-done: rgba(38, 37, 30, 0.2);
+
+  /* Cursor shadows */
+  --shadow-card: rgba(0,0,0,0.14) 0px 28px 70px, rgba(0,0,0,0.1) 0px 14px 32px, rgba(38,37,30,0.1) 0px 0px 0px 1px;
+  --shadow-ambient: rgba(0,0,0,0.02) 0px 0px 16px, rgba(0,0,0,0.008) 0px 0px 8px;
+  --shadow-focus: rgba(0,0,0,0.1) 0px 4px 12px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-body);
+  background: var(--background);
+  color: var(--foreground);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.font-mono, code, pre {
+  font-family: var(--font-mono);
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(38, 37, 30, 0.12); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(38, 37, 30, 0.22); }
+
+/* Animations */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.fade-up { animation: fade-up 0.25s ease-out forwards; }
+
+@keyframes thinking-pulse {
+  0%, 80%, 100% { opacity: 0.3; transform: scale(0.75); }
+  40% { opacity: 1; transform: scale(1); }
+}
+.thinking-dot { animation: thinking-pulse 1.4s ease-in-out infinite; }
+.thinking-dot:nth-child(2) { animation-delay: 0.2s; }
+.thinking-dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes progress-sweep {
+  0% { width: 0%; }
+  30% { width: 42%; }
+  65% { width: 68%; }
+  85% { width: 84%; }
+  100% { width: 100%; }
+}
+.progress-animate { animation: progress-sweep 4s ease-out forwards; }
+
+textarea:focus { outline: none; }
+button:focus-visible { box-shadow: var(--shadow-focus); outline: none; }
+
+.citation-ref {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 3px;
+  background: rgba(245, 78, 0, 0.12);
+  color: #f54e00;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  cursor: default;
+  vertical-align: middle;
+  margin: 0 1px;
+  transition: background 150ms ease;
+}
+.citation-ref:hover { background: rgba(245, 78, 0, 0.22); }
+
+/* Source card hover */
+.source-card { transition: box-shadow 200ms ease, border-color 150ms ease; }
+.source-card:hover {
+  border-color: rgba(38, 37, 30, 0.25) !important;
+  box-shadow: var(--shadow-ambient);
+}
+
+/* Sidebar session buttons */
+.session-btn:hover { background: rgba(38, 37, 30, 0.04); }
+.session-btn.active { background: rgba(38, 37, 30, 0.06); }
+
+/* Depth selector */
+.depth-option { transition: color 150ms ease, background 150ms ease; }
+.depth-option.selected {
+  background: var(--foreground);
+  color: var(--background);
+}
+.depth-option:not(.selected):hover { color: var(--foreground); }
