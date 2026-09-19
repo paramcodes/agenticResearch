@@ -2,6 +2,18 @@
 
 User-facing changelog, newest first. Each entry maps to one commit on `main`.
 
+## 2026-09-19 — `4cdb3f5` — Real charts, persistent reasoning trace
+
+- Asking for a graph now renders an actual chart: the writer emits a mermaid
+  block (pie / bar / line, data from cited sources only) and the app renders
+  it as SVG. No more `(Insert a chart here…)` placeholders, `example.com`
+  image URLs, or prose describing figures that don't exist.
+- The reasoning trace no longer vanishes: HTTP-path runs (all of production,
+  where `/ws` is unavailable) now save a collapsed trace — decomposition,
+  search, synthesis, editorial review with the verdict — under each answer.
+- Pushed to GitHub (`paramcodes/agenticResearch`); Vercel auto-deploy still
+  needs a GitHub login connection (see spec 10).
+
 ## 2026-09-19 — `2a8eddc` — Fixed production 500s, Upstash Redis live
 
 - Follow-up messages and conversation history no longer 500: every

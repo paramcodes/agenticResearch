@@ -40,7 +40,10 @@ Seed demo user: `bun run db:seed` (`demo@researcherit.local` / `password123`).
   `bun run db:migrate`. Api imports `prisma` from `@repo/db` — never new-up a
   second client.
 - Agent changes: keep `runResearch(input)` / `streamResearch(input)` in
-  `packages/agent/src/index.ts` stable. Graph lives in `src/graph.ts`
+  `packages/agent/src/index.ts` stable. Chart policy: writer may emit ONE
+  ```mermaid block (exact xychart-beta/pie syntax in the prompt) only when
+  asked, data from cited sources only; never `![](url)` image markdown, never
+  prose about nonexistent figures (editor strips both). Graph lives in `src/graph.ts`
   (Planner→Writer→Editor, revise cap `MAX_REVISIONS`); search in `src/search.ts`
   (Tavily, offline mocks use `example.invalid` — never invent real citations);
   checkpointer in `resolveCheckpointer` (Redis via patched 0.0.3 saver, else
@@ -54,6 +57,9 @@ Seed demo user: `bun run db:seed` (`demo@researcherit.local` / `password123`).
 - Web: token in `localStorage`, `src/lib/api.ts` wrapper (`streamResearch`
   over `/ws` with HTTP fallback), `ProtectedRoute` for `/agent` + `/profile`.
   Depth selector sends quick/standard/deep (search breadth + writer scope).
+  `Markdown.tsx` renders ```mermaid fences to SVG (lazy import, strict mode,
+  code fallback); `Agent.tsx` persists a collapsed trace from response meta
+  for HTTP-path runs (`stepsFromMeta`) since `/ws` frames never arrive there.
 - Docker: api `Dockerfile` target `dev` runs `bun --hot` + `prisma migrate
   deploy` on boot; web `Dockerfile` bakes `VITE_*` at build time — changing
   them needs `docker compose up --build`.
