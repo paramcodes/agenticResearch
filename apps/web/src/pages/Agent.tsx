@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { api, streamResearch, type ChatMessage, type ConversationSummary, type ResearchDepth } from "../lib/api";
 import { Markdown, getSources } from "../components/Markdown";
 import { useAuth } from "../lib/auth";
@@ -130,6 +131,18 @@ export function Agent() {
   const prepending = useRef(false);
   const stickToBottom = useRef(true);
   const writerRuns = useRef(0);
+  // Mirror of liveSteps for async continuations: runStream/reconcile close
+  // over stale renders, so they must read the ref, not the state.
+  const liveStepsRef = useRef<ReasoningStep[]>([]);
+  const setLive = (
+    updater: ReasoningStep[] | ((prev: ReasoningStep[]) => ReasoningStep[]),
+  ) => {
+    setLiveSteps((prev) => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      liveStepsRef.current = next;
+      return next;
+    });
+  };
 
   const activeConvo = conversations.find((c) => c.id === activeId) ?? null;
 
@@ -203,7 +216,7 @@ export function Agent() {
     setError(null);
     setEditingId(null);
     setLiveStatus(null);
-    setLiveSteps([]);
+    setLive([]);
     setPagination(null);
   };
 
@@ -234,7 +247,7 @@ export function Agent() {
   /** Reconcile optimistic tmp messages with server truth (newest page). */
   const reconcile = async (conversationId: string) => {
     setActiveId(conversationId);
-    const finished = liveSteps.map((s) => ({ ...s, status: "done" as const }));
+    const finished = liveStepsRef.current.map((s) => ({ ...s, status: "done" as const }));
     const { conversation, pagination: pag } = await api.getConversation(conversationId, 1, PAGE_SIZE);
     setMessages(conversation.messages);
     setPagination({ page: pag.page, totalMessages: pag.totalMessages, hasMore: pag.hasMore });
@@ -242,7 +255,7 @@ export function Agent() {
       const lastAsst = [...conversation.messages].reverse().find((m) => m.role === "assistant");
       if (lastAsst) setTraces((t) => ({ ...t, [lastAsst.id]: finished }));
     }
-    setLiveSteps([]);
+    setLive([]);
     setLiveStatus(null);
     await refreshList();
     window.setTimeout(() => void refreshList(), 12_000);
@@ -258,13 +271,13 @@ export function Agent() {
         if (node === "writer") writerRuns.current += 1;
         if (node === "planner") {
           setLiveStatus("searching");
-          setLiveSteps([
+          setLive([
             { id: "s-think", kind: "thinking", label: "Query decomposition", detail: "Parsed the question into researchable components.", status: "done" },
             { id: "s-search", kind: "searching", label: "Literature search", detail: detail || "Querying live sources…", status: "active" },
           ]);
         } else if (node === "writer") {
           setLiveStatus("synthesizing");
-          setLiveSteps((prev) => {
+          setLive((prev) => {
             const base = prev.length > 0 ? prev : [
               { id: "s-think", kind: "thinking" as const, label: "Query decomposition", detail: "Parsed the question into researchable components.", status: "done" as const },
               { id: "s-search", kind: "searching" as const, label: "Literature search", detail: "Retrieved candidate sources.", status: "done" as const },
@@ -276,7 +289,7 @@ export function Agent() {
           });
         } else if (node === "editor") {
           setLiveStatus("reading");
-          setLiveSteps((prev) => [
+          setLive((prev) => [
             ...prev.map((s) => ({ ...s, status: "done" as const })),
             { id: "s-edit", kind: "reading", label: "Editorial review", detail: detail ? `Verdict: ${detail}` : "Reviewing the draft…", status: "active" },
           ]);
@@ -322,7 +335,7 @@ export function Agent() {
     setLoading(true);
     stickToBottom.current = true;
     setLiveStatus("thinking");
-    setLiveSteps([
+    setLive([
       { id: "s-think", kind: "thinking", label: "Query decomposition", detail: "Parsing the question…", status: "active" },
     ]);
     const userTmp: ChatMessage = { id: tmpId("tmp-u"), role: "user", content, createdAt: nowIso() };
@@ -333,7 +346,7 @@ export function Agent() {
       setTopic("");
     } catch {
       setMessages((m) => m.filter((x) => x.id !== userTmp.id && x.id !== asstTmp.id));
-      setLiveSteps([]);
+      setLive([]);
       setLiveStatus(null);
       try {
         await runHttp(content, activeId);
@@ -353,7 +366,7 @@ export function Agent() {
     setError(null);
     stickToBottom.current = true;
     setLiveStatus("thinking");
-    setLiveSteps([
+    setLive([
       { id: "s-think", kind: "thinking", label: "Query decomposition", detail: "Parsing the revised question…", status: "active" },
     ]);
     const convoId = activeId;
@@ -370,7 +383,7 @@ export function Agent() {
       await runStream(content, convoId, asstTmp.id);
     } catch {
       setMessages((m) => m.filter((x) => x.id !== userTmp.id && x.id !== asstTmp.id));
-      setLiveSteps([]);
+      setLive([]);
       setLiveStatus(null);
       try {
         const { userMessage, assistantMessage } = await api.sendMessage(convoId, content, depth);
@@ -438,7 +451,7 @@ export function Agent() {
           </div>
         ) : m.content ? (
           <div className="ri-body">
-            <Markdown content={m.content} className="ri-body" />
+            <Markdown content={m.content} className="ri-body" showSources={false} />
           </div>
         ) : null}
 
@@ -472,7 +485,7 @@ export function Agent() {
   return (
     <div className="ri">
       <aside className={`ri-sidebar${sidebarOpen ? "" : " closed"}`}>
-        <div className="ri-wordmark">
+        <Link to="/" className="ri-wordmark" style={{ textDecoration: "none" }} title="Home">
           <span className="ri-mark">
             <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
               <circle cx="5" cy="5" r="2.5" fill="white" opacity="0.9" />
@@ -480,7 +493,7 @@ export function Agent() {
             </svg>
           </span>
           <span>Researcher</span>
-        </div>
+        </Link>
         <button className="ri-new" onClick={newChat}>
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
             <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
@@ -509,10 +522,10 @@ export function Agent() {
         </nav>
         <div className="ri-user">
           <span className="ri-avatar">{(user?.name || user?.email || "R").slice(0, 1).toUpperCase()}</span>
-          <div className="ri-user-info">
+          <Link to="/profile" className="ri-user-info" style={{ textDecoration: "none", color: "inherit" }} title="Profile">
             <p className="ri-user-name">{user?.name || "Researcher"}</p>
             <p className="ri-user-plan">{user?.email || ""}</p>
-          </div>
+          </Link>
           <button className="ri-logout" onClick={() => void logout()} title="Log out" aria-label="Log out">⏻</button>
         </div>
       </aside>

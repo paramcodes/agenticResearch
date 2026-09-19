@@ -1,4 +1,5 @@
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 interface Source {
   number: number;
@@ -20,6 +21,16 @@ function splitSources(content: string): { main: string; rest: string } | null {
   };
 }
 
+/** Strip markdown emphasis the model sometimes leaves inside link titles. */
+function cleanTitle(t: string): string {
+  return t
+    .replace(/\*\*(.+?)\*\*/g, "$1")
+    .replace(/__(.+?)__/g, "$1")
+    .replace(/^\*(.+)\*$/, "$1")
+    .replace(/^_(.+)_$/, "$1")
+    .trim();
+}
+
 function hostOf(url: string): string {
   try {
     return new URL(url).hostname.replace(/^www\./, "");
@@ -38,7 +49,7 @@ function parseSourceLine(line: string, fallbackNumber: number): Source | null {
   if (mdLink?.[2]) {
     return {
       number: fallbackNumber,
-      title: (mdLink[1] || hostOf(mdLink[2])).trim(),
+      title: cleanTitle(mdLink[1] || hostOf(mdLink[2])),
       url: mdLink[2].trim(),
     };
   }
@@ -50,7 +61,7 @@ function parseSourceLine(line: string, fallbackNumber: number): Source | null {
       .replace(/^\[\d+\]\s*/, "")
       .replace(/^[-–—:|\s]+|[-–—:|\s]+$/g, "")
       .trim();
-    return { number: fallbackNumber, title: title || hostOf(url), url };
+    return { number: fallbackNumber, title: cleanTitle(title) || hostOf(url), url };
   }
   return null;
 }
@@ -78,7 +89,16 @@ export function getSources(content: string): Source[] {
   return extractSources(content).sources;
 }
 
-export function Markdown({ content, className = "markdown" }: { content: string; className?: string }) {
+export function Markdown({
+  content,
+  className = "markdown",
+  showSources = true,
+}: {
+  content: string;
+  className?: string;
+  /** The Agent page renders its own source cards — it hides this section. */
+  showSources?: boolean;
+}) {
   const { mainContent, sources } = extractSources(content);
   // Turn bare [n] markers into chip links (only when they resolve to a
   // parsed source; code-like `arr[1]` is left alone by the lookbehind).
@@ -91,6 +111,7 @@ export function Markdown({ content, className = "markdown" }: { content: string;
   return (
     <div className={className}>
       <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
         components={{
           a: ({ href, children }) =>
             href?.startsWith("#cite-") ? (
@@ -104,7 +125,7 @@ export function Markdown({ content, className = "markdown" }: { content: string;
       >
         {withCites}
       </ReactMarkdown>
-      {sources.length > 0 && (
+      {showSources && sources.length > 0 && (
         <div className="sources-section">
           <h4>Sources</h4>
           <ul className="sources-list">
