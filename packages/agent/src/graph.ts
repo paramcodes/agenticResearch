@@ -260,6 +260,7 @@ async function plannerNode(state: State): Promise<Partial<State>> {
     const plan = await invokeLlm(
       "You are a Content Planner. Follow the brief exactly; output the plan as markdown.",
       plannerPrompt(state.topic, outcome.sourcesBlock, note),
+      { maxTokens: 8192 },
     );
     return {
       sources: outcome.sources,
@@ -286,7 +287,7 @@ async function writerNode(
     const draft = await invokeLlm(
       "You are a Content Writer. Output valid markdown only.",
       writerPrompt(state.topic, state.plan, state.sourcesBlock, state.editorFeedback, state.depth),
-      { onToken: opts.onToken },
+      { onToken: opts.onToken, maxTokens: 16384, maxContinuations: 2 },
     );
     return { draft };
   }
@@ -311,7 +312,7 @@ async function editorNode(
     const raw = await invokeLlm(
       "You are an Editor. Reply with VERDICT, ---, then the markdown or the feedback.",
       editorPrompt(state.draft),
-      { onToken: opts.onToken },
+      { onToken: opts.onToken, maxTokens: 16384, maxContinuations: 2 },
     );
     const { verdict, body } = parseEditorVerdict(raw);
     const revisionCount = state.revisionCount + (verdict === "revise" ? 1 : 0);

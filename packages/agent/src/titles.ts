@@ -37,6 +37,7 @@ export async function generateConversationTitle(topic: string): Promise<string> 
     const raw = await invokeLlm(
       "You write short chat-sidebar titles. Reply with the title only: 3-6 words, no quotes, no trailing punctuation.",
       `Write a sidebar title for a research chat about: ${topic.trim().slice(0, 500)}`,
+      { maxTokens: 64 },
     );
     return sanitizeTitle(raw, fallback);
   } catch {

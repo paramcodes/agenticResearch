@@ -120,3 +120,22 @@ with the decisions behind each fix.
   changes before claiming green.
 - The unused `getRefreshToken` import in `auth.tsx` is intentional (symmetric
   token helpers); the write path lives in `api.ts`.
+
+## Truncated output: Groq caps gpt-oss-20b at 2048 output tokens by default
+
+Symptom: assistant messages ending mid-word ("…Considerations\n\nS"), Sources
+section missing entirely. Both previously blamed on the sources parser / UI —
+the DB rows proved generation itself was cut (`finish_reason: "length"`,
+`completionTokens: 2048`, ~380 of them reasoning tokens).
+
+Fix in `packages/agent/src/llm.ts`: `invokeLlm` accepts `maxTokens` (passed to
+the model) plus `maxContinuations` — while `finish_reason === "length"`, it
+re-invokes with `[system, human(original), AI(partial), human("continue …")]`
+and appends. Budgets: writer/editor 16384 + 2 continuations, planner 8192,
+titles 64. Verified live: 7672 chars/`length` before → 16252 chars/`stop`
+after, ending on real Sources entries.
+
+Notes: continuation tokens flow through the same `onToken` sink in order, so
+streaming is unaffected; the api container picks this up via `bun --hot`
+(live `./packages` mount) with no image rebuild. `repro-length.ts` was a
+throwaway diagnostic, deleted after use.
