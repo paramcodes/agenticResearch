@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -89,6 +90,50 @@ export function getSources(content: string): Source[] {
   return extractSources(content).sources;
 }
 
+/** Renders a ```mermaid fence as SVG (lazy-loaded mermaid, strict mode).
+ *  Partial code mid-stream usually fails to parse — shows a placeholder
+ *  until the fence completes, and the raw code if parsing still fails. */
+function MermaidBlock({ code }: { code: string }) {
+  const [svg, setSvg] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  const live = useRef(true);
+  useEffect(() => {
+    live.current = true;
+    setSvg(null);
+    setFailed(false);
+    void (async () => {
+      try {
+        const { default: mermaid } = await import("mermaid");
+        mermaid.initialize({ startOnLoad: false, securityLevel: "strict" });
+        const id = `mmd-${Math.random().toString(36).slice(2, 10)}`;
+        const { svg } = await mermaid.render(id, code);
+        if (live.current) setSvg(svg);
+      } catch {
+        if (live.current) setFailed(true);
+      }
+    })();
+    return () => {
+      live.current = false;
+    };
+  }, [code]);
+  if (failed)
+    return (
+      <pre>
+        <code className="language-mermaid">{code}</code>
+      </pre>
+    );
+  if (!svg) return <div className="mermaid-loading">Rendering chart…</div>;
+  // SVG comes from our own mermaid render of model output with securityLevel
+  // strict (no clickable/script payloads) — same trust as the markdown itself.
+  return <div className="mermaid-chart" dangerouslySetInnerHTML={{ __html: svg }} />;
+}
+
+function codeText(children: ReactNode): string {
+  if (typeof children === "string") return children;
+  if (Array.isArray(children)) return children.map(codeText).join("");
+  return "";
+}
+
 export function Markdown({
   content,
   className = "markdown",
@@ -123,6 +168,12 @@ export function Markdown({
               <a href={href} target="_blank" rel="noopener noreferrer">
                 {children}
               </a>
+            ),
+          code: ({ className, children }) =>
+            /\blanguage-mermaid\b/.test(className ?? "") ? (
+              <MermaidBlock code={codeText(children).replace(/\n$/, "")} />
+            ) : (
+              <code className={className}>{children}</code>
             ),
         }}
       >

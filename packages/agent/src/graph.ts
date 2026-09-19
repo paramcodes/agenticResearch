@@ -140,6 +140,26 @@ function writerPrompt(
     "- Output valid markdown only.",
     `- Scope: ${DEPTH_SCOPE[depth] ?? DEPTH_SCOPE.standard}`,
     "",
+    "Charts (only when the request asks for one — otherwise no chart):",
+    "- This pipeline cannot generate image files. Never emit `![alt](url)`",
+    "  image markdown: there is no image hosting, and any URL outside the",
+    "  sources list is a fabrication.",
+    "- Never write Figure/Table captions or prose describing a chart that is",
+    "  not in the output (no '(Insert a chart here…)', no 'the accompanying",
+    "  graph shows…' unless the block below exists).",
+    "- To visualize, embed ONE ```mermaid block (pie, or xychart-beta bar /",
+    "  line chart) built ONLY from the numbered sources — no invented data",
+    "  points. Put the [n] source marker in each label or a %% comment.",
+    "  Use EXACTLY this syntax (xychart-beta takes arrays, not series lines):",
+    "  ```mermaid",
+    "  xychart-beta",
+    '      title "Scores"',
+    '      x-axis ["Model A [1]", "Model B [2]"]',
+    '      y-axis "Score" 0 --> 100',
+    "      bar [88, 92]",
+    "  ```",
+    "  or: pie title Share — \"A [1]\" : 60 — \"B [2]\" : 40 (one per line).",
+    "",
     "Content plan:",
     plan,
     "",
@@ -163,6 +183,10 @@ function editorPrompt(draft: string): string {
     "- Keeps every [n] citation marker intact and matched to a real source in",
     "  the closing Sources list (do not remove citations while editing).",
     "- Is clean, well-structured markdown, 2-3 paragraphs per section.",
+    "- Strips any `![…](…)` image whose URL is not in the closing Sources",
+    "  list, and deletes prose describing figures/charts that don't exist in",
+    "  the draft. A ```mermaid block is allowed only when its data matches",
+    "  cited sources.",
     "",
     "If the draft is publication-ready, lightly proofread it (grammar, voice)",
     "and respond with:",
@@ -216,6 +240,15 @@ function offlinePlan(topic: string, sourcesBlock: string): string {
 
 function offlineDraft(topic: string, plan: string, sources: CitedSource[], feedback: string): string {
   const list = sources.map((s, i) => `${i + 1}. [${s.title}](${s.url})`).join("\n");
+  const wantsChart = /chart|graph|plot|visualis|visualiz|diagram|figure/i.test(topic);
+  const chartNote = wantsChart
+    ? [
+        "",
+        "> A data chart needs live sources to draw from — this offline draft",
+        "> has only placeholder sources, so no chart is included rather than a",
+        "> fabricated one. Re-run with search enabled for a mermaid chart.",
+      ].join("\n")
+    : "";
   return [
     `# ${topic}`,
     "",
@@ -243,6 +276,7 @@ function offlineDraft(topic: string, plan: string, sources: CitedSource[], feedb
     list,
     "",
     `<!-- plan digest: ${plan.split("\n").length} lines -->`,
+    chartNote,
   ].join("\n");
 }
 

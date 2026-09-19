@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, streamResearch, type ChatMessage, type ConversationSummary, type ResearchDepth } from "../lib/api";
+import { api, streamResearch, type ChatMessage, type ConversationSummary, type ResearchDepth, type ResearchMeta } from "../lib/api";
 import { Markdown, getSources } from "../components/Markdown";
 import { useAuth } from "../lib/auth";
 
@@ -36,6 +36,21 @@ const STATUS_LABELS: Record<AgentStatus, string> = {
 const tmpId = (p: string) => `${p}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 const nowIso = () => new Date().toISOString();
 const PAGE_SIZE = 50;
+
+/** Finished reasoning steps for runs without live node frames (plain HTTP
+ *  path, e.g. on serverless where /ws is unavailable). The stages really ran
+ *  server-side — meta carries the verdict/revision count to prove it — so a
+ *  collapsed trace persists instead of vanishing with the live indicator. */
+function stepsFromMeta(meta: ResearchMeta | undefined, depth: ResearchDepth): ReasoningStep[] {
+  const m = meta ?? { verdict: "", revisionCount: 0, offline: false };
+  const synth = m.revisionCount > 1 ? `Synthesis (revision ${m.revisionCount})` : "Synthesis";
+  return [
+    { id: "s-think", kind: "thinking", label: "Query decomposition", detail: `Parsed the question (${depth} depth).`, status: "done" },
+    { id: "s-search", kind: "searching", label: "Literature search", detail: m.offline ? "Offline sources (no search key)." : "Retrieved candidate sources.", status: "done" },
+    { id: "s-write", kind: "synthesizing", label: synth, detail: "Built structured response with inline citations.", status: "done" },
+    { id: "s-edit", kind: "reading", label: "Editorial review", detail: m.verdict ? `Verdict: ${m.verdict}` : "Reviewed the draft.", status: "done" },
+  ];
+}
 
 function hostOf(url: string): string {
   try {
@@ -240,9 +255,10 @@ export function Agent() {
   };
 
   /** Reconcile optimistic tmp messages with server truth (newest page). */
-  const reconcile = async (conversationId: string) => {
+  const reconcile = async (conversationId: string, fallbackSteps?: ReasoningStep[]) => {
     setActiveId(conversationId);
-    const finished = liveStepsRef.current.map((s) => ({ ...s, status: "done" as const }));
+    const live = liveStepsRef.current;
+    const finished = (live.length > 0 ? live : (fallbackSteps ?? [])).map((s) => ({ ...s, status: "done" as const }));
     const { conversation, pagination: pag } = await api.getConversation(conversationId, 1, PAGE_SIZE);
     setMessages(conversation.messages);
     setPagination({ page: pag.page, totalMessages: pag.totalMessages, hasMore: pag.hasMore });
@@ -312,12 +328,18 @@ export function Agent() {
   /** Fallback path: plain HTTP request/response (also the offline safety net). */
   const runHttp = async (content: string, convoId: string | null) => {
     if (convoId) {
-      const { userMessage, assistantMessage } = await api.sendMessage(convoId, content, depth);
-      await reconcile(convoId).catch(() => setMessages((m) => [...m, userMessage, assistantMessage]));
+      const { userMessage, assistantMessage, meta } = await api.sendMessage(convoId, content, depth);
+      try {
+        await reconcile(convoId, stepsFromMeta(meta, depth));
+      } catch {
+        setMessages((m) => [...m, userMessage, assistantMessage]);
+        setTraces((t) => ({ ...t, [assistantMessage.id]: stepsFromMeta(meta, depth) }));
+      }
     } else {
       const res = await api.research(content, undefined, depth);
       setActiveId(res.conversationId);
       setMessages([res.userMessage, res.assistantMessage]);
+      setTraces((t) => ({ ...t, [res.assistantMessage.id]: stepsFromMeta(res.meta, depth) }));
     }
     await refreshList();
   };
@@ -381,12 +403,13 @@ export function Agent() {
       setLive([]);
       setLiveStatus(null);
       try {
-        const { userMessage, assistantMessage } = await api.sendMessage(convoId, content, depth);
+        const { userMessage, assistantMessage, meta } = await api.sendMessage(convoId, content, depth);
         setMessages((prev) => {
           const idx = prev.findIndex((m) => m.id === msg.id);
           const head = idx >= 0 ? prev.slice(0, idx) : prev;
           return [...head, userMessage, assistantMessage];
         });
+        setTraces((t) => ({ ...t, [assistantMessage.id]: stepsFromMeta(meta, depth) }));
         await refreshList();
       } catch (err) {
         setError((err as Error).message);
