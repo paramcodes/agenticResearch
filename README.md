@@ -76,6 +76,46 @@ bun run dev         # turbo: api :4000 + web :5173
 Per-app dev: `bun --filter=@researcherit/api run dev`,
 `bun --filter=@researcherit/web run dev`.
 
+## Deploy to Vercel
+
+Live at https://researcherit.vercel.app — one Vercel project serves both the
+Vite SPA (`apps/web/dist`) and the Express API as serverless functions
+(`api/*`, one file per route prefix, all wrapping the same pre-bundled app).
+
+```sh
+# One-time setup
+npx vercel link --project=researcherit   # run from /tmp, not the repo root
+                                         # (npm chokes on the bun devEngines)
+DATABASE_URL='<pooled-neon-url>' bun --filter=@repo/db run db:deploy
+npx vercel env add DATABASE_URL production      # + JWT_SECRET (openssl rand
+npx vercel env add JWT_SECRET production        # -hex 32), NODE_ENV=production,
+npx vercel env add CORS_ORIGIN production       # GROQ_/SERPER_/OPENAI_/RESEARCH_
+# … then: npx vercel deploy --prod --yes
+```
+
+Required production env: `DATABASE_URL` (Neon pooled), `NODE_ENV=production`,
+`JWT_SECRET`, `CORS_ORIGIN` (the live URL), `PRISMA_QUERY_ENGINE_LIBRARY`
+(`/var/task/api/.bundle/libquery_engine-rhel-openssl-3.0.x.so.node`).
+Live research adds `GROQ_API_KEY` + `SERPER_API_KEY` (+ optional
+`OPENAI_BASE_URL`, `RESEARCH_MODEL`); without them the pipeline runs offline
+templates. Never set `VITE_API_URL` (same-origin relative fetch is correct),
+`ALLOW_INSECURE_GOOGLE_DEV`, or a localhost `REDIS_URL` in prod.
+
+How it works: `vercel.json` runs `prisma generate` →
+`bun run build:vercel-api` (esbuild bundles `scripts/vercel-api-entry.ts` +
+workspace TS + all npm deps into `api/.bundle/handler.cjs`, copies the Prisma
+engine `.so.node` alongside) → Vite build. The bundle is needed because
+Vercel's Node can't import the workspace's raw `.ts` (package exports point
+at `./src/*.ts`, Bun-only) or follow Bun's isolated-store symlinks — verified
+by `FUNCTION_INVOCATION_FAILED` → `ERR_REQUIRE_ESM` →
+`ERR_MODULE_NOT_FOUND` before the fix. `.vercelignore` keeps local `.env`
+files out of uploads (dotenv would otherwise load leaked dev keys at runtime).
+
+Trade-offs vs Docker: raw `/ws` streaming doesn't run on serverless — the web
+client falls back to HTTP automatically, so research still works end-to-end.
+Long runs are capped by the 60s function `maxDuration`. Redis is omitted
+(best-effort code falls back to MemorySaver / fail-open rate limits).
+
 ## Environment files
 
 | File | Used by | Notes |

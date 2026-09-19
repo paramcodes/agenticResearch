@@ -2,6 +2,16 @@
 
 User-facing changelog, newest first. Each entry maps to one commit on `main`.
 
+## 2026-09-19 — `b07456c` — Vercel deployment (live: researcherit.vercel.app)
+
+- One Vercel project serves the Vite SPA and the Express API (serverless
+  functions, one file per route prefix, all wrapping a pre-bundled app).
+- Neon Postgres (migrations applied), Groq + Serper for live research;
+  verified end-to-end on production (register → research → cited markdown).
+- Serverless trade-offs: `/ws` streaming falls back to HTTP automatically,
+  long runs capped at the 60s function timeout, Redis omitted (fail-open
+  fallbacks cover it). See `specs/08-learnings-from-vercel-deployment.md`.
+
 ## 2026-09-19 — `9df2495` — Readable type, linked citations, top-anchored output
 
 - Removed the CursorGothic webfont: the files rendered distorted. Display text

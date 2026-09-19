@@ -57,5 +57,15 @@ Seed demo user: `bun run db:seed` (`demo@researcherit.local` / `password123`).
 - Docker: api `Dockerfile` target `dev` runs `bun --hot` + `prisma migrate
   deploy` on boot; web `Dockerfile` bakes `VITE_*` at build time — changing
   them needs `docker compose up --build`.
+- Vercel (live: https://researcherit.vercel.app, spec 08): single project,
+  web static + Express via `api/*` serverless wrappers around the esbuild
+  bundle (`bun run build:vercel-api` → `api/.bundle/handler.cjs` + Prisma
+  engine; `PRISMA_QUERY_ENGINE_LIBRARY=/var/task/api/.bundle/<engine>`).
+  One file per route prefix — top-level `api/[...all]` only matches one
+  segment, so `auth/*`, `agent/*`, `conversations/*`, `[id]/messages` each get
+  their own entry. Never upload `.env` (`.vercelignore`); set secrets via
+  `vercel env`. Never set `VITE_API_URL` (same-origin), `ALLOW_INSECURE_*`,
+  or localhost `REDIS_URL` in prod. Run `npx vercel` from /tmp — npm inside
+  the repo chokes on the bun devEngines.
 - Verify before claiming done: `bun run check-types`, `bun run build`,
   `docker compose config`, and boot the stack if you touched runtime code.
