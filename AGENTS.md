@@ -5,6 +5,22 @@ Stack: React/Vite web · Express api (Bun runtime) · Prisma/Postgres (`@repo/db
 · Redis (ioredis best-effort + redis-stack for the graph checkpointer)
 · LangGraph 0.4 Planner→Writer→Editor (`@repo/agent`).
 
+## Workflow (standing order — always follow)
+
+1. New feature or bugfix → create a branch first (`feat/…`, `fix/…`, `docs/…`).
+   Never commit directly to `main`.
+2. Work in small commits (Conventional Commits: `feat|fix|docs|chore`), each
+   verified (`bun run check-types --force`, build, boot the stack if runtime
+   code changed). Stage only intended files — never secrets, `.env`,
+   `api/.bundle`, `api/**/handler.cjs`, engine binaries.
+3. Every change ships docs with the code: update `README.md` /
+   `CHANGES.md` (newest-first entry, maps to the commit) and add a
+   `specs/NN-<topic>.md` learnings file (decisions + gotchas, spec 05/08/09
+   style) for anything non-trivial.
+4. Push the branch, open a PR with `gh pr create`. Merging to `main`
+   auto-deploys to Vercel (project linked to
+   `paramcodes/agenticResearch`; preview deploys per PR).
+
 ## Start the project
 
 ```sh
