@@ -22,6 +22,8 @@ coverage
 .vercel
 # Generated serverless bundle (built during `vercel build`, never committed)
 api/.bundle/
+api/**/handler.cjs
+api/**/libquery_engine-*.so.node
 
 # Build Outputs
 .next/

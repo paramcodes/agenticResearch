@@ -47,3 +47,26 @@ console.log(`[bundle-vercel-api] engine: ${engineFile}`);
 if (!existsSync(join(outDir, "handler.cjs")))
   throw new Error("Bundle output missing");
 console.log("[bundle-vercel-api] done → api/.bundle/handler.cjs");
+
+// Vercel traces files per function, and relative requires climbing out of
+// nested function dirs (api/conversations/[id]/ → ../../.bundle/…) are not
+// reliably included — nested routes 500'd with "Cannot find module" while
+// top-level ones worked. So every dir holding a wrapper gets its own copies;
+// wrappers require ./handler.cjs (same-dir, trivially traceable). The Prisma
+// engine travels with them because its runtime resolution is
+// `path.join(__dirname, "libquery_engine-…")` — i.e. next to the bundle —
+// and no single PRISMA_QUERY_ENGINE_LIBRARY value can cover five different
+// dirs, so that var must stay UNSET (see vercel.json docs below).
+const handlerSrc = join(outDir, "handler.cjs");
+const engineSrc = join(outDir, engineFile);
+for (const dir of [
+  join(root, "api"),
+  join(root, "api", "auth"),
+  join(root, "api", "agent"),
+  join(root, "api", "conversations"),
+  join(root, "api", "conversations", "[id]"),
+]) {
+  copyFileSync(handlerSrc, join(dir, "handler.cjs"));
+  copyFileSync(engineSrc, join(dir, engineFile));
+}
+console.log("[bundle-vercel-api] handler + engine copies placed next to wrappers");
