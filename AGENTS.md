@@ -57,13 +57,18 @@ Seed demo user: `bun run db:seed` (`demo@researcherit.local` / `password123`).
 - Docker: api `Dockerfile` target `dev` runs `bun --hot` + `prisma migrate
   deploy` on boot; web `Dockerfile` bakes `VITE_*` at build time — changing
   them needs `docker compose up --build`.
-- Vercel (live: https://researcherit.vercel.app, spec 08): single project,
+- Vercel (live: https://researcherit.vercel.app, specs 08–09): single project,
   web static + Express via `api/*` serverless wrappers around the esbuild
-  bundle (`bun run build:vercel-api` → `api/.bundle/handler.cjs` + Prisma
-  engine; `PRISMA_QUERY_ENGINE_LIBRARY=/var/task/api/.bundle/<engine>`).
-  One file per route prefix — top-level `api/[...all]` only matches one
-  segment, so `auth/*`, `agent/*`, `conversations/*`, `[id]/messages` each get
-  their own entry. Never upload `.env` (`.vercelignore`); set secrets via
+  bundle (`bun run build:vercel-api` → `handler.cjs` + Prisma engine copied
+  next to every wrapper; entry self-provisions the engine to
+  `/tmp/prisma-engines` on cold start — never set
+  `PRISMA_QUERY_ENGINE_LIBRARY` in `vercel env`). One file per route prefix
+  — top-level `api/[...all]` only matches one segment, so `auth/*`,
+  `agent/*`, `conversations/*`, `[id]/messages` each get their own entry.
+  Redis in prod is Upstash REST (`UPSTASH_REDIS_REST_URL`/`_TOKEN`, via
+  `@upstash/redis` in `lib/redis.ts` — the REST token is not a RESP
+  password); no `REDIS_URL` (checkpointer needs RediSearch, falls back to
+  MemorySaver). Never upload `.env` (`.vercelignore`); set secrets via
   `vercel env`. Never set `VITE_API_URL` (same-origin), `ALLOW_INSECURE_*`,
   or localhost `REDIS_URL` in prod. Run `npx vercel` from /tmp — npm inside
   the repo chokes on the bun devEngines.

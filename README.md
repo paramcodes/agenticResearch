@@ -94,8 +94,12 @@ npx vercel env add CORS_ORIGIN production       # GROQ_/SERPER_/OPENAI_/RESEARCH
 ```
 
 Required production env: `DATABASE_URL` (Neon pooled), `NODE_ENV=production`,
-`JWT_SECRET`, `CORS_ORIGIN` (the live URL), `PRISMA_QUERY_ENGINE_LIBRARY`
-(`/var/task/api/.bundle/libquery_engine-rhel-openssl-3.0.x.so.node`).
+`JWT_SECRET`, `CORS_ORIGIN` (the live URL). Redis via Upstash REST
+(`UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` — powers logout
+blacklist, rate limits, conversation status; the REST token is *not* a RESP
+password, so it can't go in `REDIS_URL`). No `REDIS_URL` in prod: the graph
+checkpointer needs RediSearch (Upstash lacks it) and correctly falls back to
+MemorySaver.
 Live research adds `GROQ_API_KEY` + `SERPER_API_KEY` (+ optional
 `OPENAI_BASE_URL`, `RESEARCH_MODEL`); without them the pipeline runs offline
 templates. Never set `VITE_API_URL` (same-origin relative fetch is correct),
@@ -103,8 +107,12 @@ templates. Never set `VITE_API_URL` (same-origin relative fetch is correct),
 
 How it works: `vercel.json` runs `prisma generate` →
 `bun run build:vercel-api` (esbuild bundles `scripts/vercel-api-entry.ts` +
-workspace TS + all npm deps into `api/.bundle/handler.cjs`, copies the Prisma
-engine `.so.node` alongside) → Vite build. The bundle is needed because
+workspace TS + all npm deps into `handler.cjs`, copied next to every `api/*`
+wrapper with the Prisma engine alongside — same-dir requires are the only
+shape nft tracing reliably includes) → Vite build. At cold start the entry
+copies the sibling engine to `/tmp/prisma-engines` and points
+`PRISMA_QUERY_ENGINE_LIBRARY` at it, since Prisma's default search paths
+don't cover every function layout. The bundle is needed because
 Vercel's Node can't import the workspace's raw `.ts` (package exports point
 at `./src/*.ts`, Bun-only) or follow Bun's isolated-store symlinks — verified
 by `FUNCTION_INVOCATION_FAILED` → `ERR_REQUIRE_ESM` →

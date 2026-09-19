@@ -2,6 +2,18 @@
 
 User-facing changelog, newest first. Each entry maps to one commit on `main`.
 
+## 2026-09-19 — `2a8eddc` — Fixed production 500s, Upstash Redis live
+
+- Follow-up messages and conversation history no longer 500: every
+  serverless wrapper dir now ships its own copy of the API bundle + Prisma
+  engine (per-function file tracing dropped the shared `../.bundle`
+  requires), and the engine self-provisions to `/tmp` on cold start.
+- Redis in production via Upstash REST: logout actually revokes tokens now,
+  login/register rate limits are enforced, no more `ECONNREFUSED` log noise.
+  (The graph checkpointer stays on MemorySaver — Upstash lacks RediSearch.)
+- Remaining known limit: a single deep research run can exceed the 60s Hobby
+  function timeout. See `specs/09-learnings-from-prod-500s-and-upstash.md`.
+
 ## 2026-09-19 — `b07456c` — Vercel deployment (live: researcherit.vercel.app)
 
 - One Vercel project serves the Vite SPA and the Express API (serverless
